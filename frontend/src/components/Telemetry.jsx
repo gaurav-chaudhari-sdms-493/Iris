@@ -19,7 +19,7 @@ export default function Telemetry({ telemetry, onAcChange }) {
             <span className="text-4xl font-extrabold text-cyan-400 font-mono">{headcount}</span>
             <span className="text-sm font-medium text-slate-300">Occupants</span>
           </div>
-          <p className="text-xs text-slate-500 mt-2 font-mono">Real-Time 1-sec YOLO Object Detection</p>
+          <p className="text-xs text-slate-500 mt-2 font-mono">Real-Time 1-sec YOLO11s PHD Detection</p>
         </div>
         <div className="p-3.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
           <Users className="w-7 h-7" />

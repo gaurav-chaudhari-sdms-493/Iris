@@ -62,7 +62,7 @@ export default function Presets({ currentMode, onSelectPreset }) {
           </div>
           <div className="mt-3">
             <h3 className="font-bold text-sm text-slate-100">Full Auto AI Mode</h3>
-            <p className="text-xs text-slate-400 mt-1">Instant light turn-on + 1s real-time YOLO headcount occupancy polling.</p>
+            <p className="text-xs text-slate-400 mt-1">Instant light turn-on + 1s real-time YOLO11s PHD headcount occupancy polling.</p>
           </div>
         </button>
 

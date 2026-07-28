@@ -10,6 +10,7 @@ import os
 RTSP_URL = os.environ.get("IRIS_RTSP_URL", "rtsp://admin:password@192.168.1.100:554/stream1")
 VIDEO_PATH = os.environ.get("IRIS_VIDEO_PATH", "video.mp4")
 USE_SIMULATED_STREAM = os.environ.get("IRIS_SIMULATED", "true").lower() == "true"
+YOLO_MODEL_PATH = os.environ.get("IRIS_YOLO_MODEL", "yolo11s.pt")
 
 # Hardware Direct Access Mode (Set to False to use physical devices)
 HARDWARE_MOCK_MODE = os.environ.get("IRIS_HARDWARE_MOCK", "true").lower() == "true"
