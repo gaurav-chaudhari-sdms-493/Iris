@@ -8,7 +8,7 @@ import os
 # RTSP / Video Source
 # Default RTSP URL or synthetic video mode
 RTSP_URL = os.environ.get("IRIS_RTSP_URL", "rtsp://admin:password@192.168.1.100:554/stream1")
-VIDEO_PATH = os.environ.get("IRIS_VIDEO_PATH", "video.mp4")
+VIDEO_PATH = os.environ.get("IRIS_VIDEO_PATH", "data/office/VIDEO-2026-07-28-15-36-07.mp4")
 USE_SIMULATED_STREAM = os.environ.get("IRIS_SIMULATED", "true").lower() == "true"
 YOLO_MODEL_PATH = os.environ.get("IRIS_YOLO_MODEL", "yolo11s.pt")
 

@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  iris:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: project-iris
+    ports:
+      - "8008:8008"
+    environment:
+      - IRIS_VIDEO_PATH=/app/backend/video.mp4
+      - IRIS_HARDWARE_MOCK=true
+      - IRIS_YOLO_MODEL=yolo11s.pt
+    volumes:
+      # Optional: Mount your local MP4 video file directly into the container
+      - ./backend/video.mp4:/app/backend/video.mp4:ro
+    restart: unless-stopped
