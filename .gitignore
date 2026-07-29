@@ -28,3 +28,23 @@ frontend/dist-ssr/
 # OS Junk
 .DS_Store
 Thumbs.db
+
+# Media Files
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.wmv
+*.flv
+*.webm
+*.ts
+*.mp3
+*.wav
+*.aac
+*.flac
+*.ogg
+*.m4a
+
+
+Project_Iris_Run
+*.zip

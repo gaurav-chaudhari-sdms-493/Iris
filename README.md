@@ -134,43 +134,6 @@ To cleanly terminate all running background processes:
 
 ---
 
-## 🐳 Docker Deployment
-
-### Option A: Using Docker Compose (Recommended)
-
-Build and start the container with a single command:
-
-```bash
-docker-compose up -d --build
-```
-
-Access the live dashboard at **`http://localhost:8008`**.
-
-To stop the container:
-```bash
-docker-compose down
-```
-
----
-
-### Option B: Using Standalone Docker CLI
-
-1. **Build Image**:
-   ```bash
-   docker build -t project-iris:latest .
-   ```
-
-2. **Run Container**:
-   ```bash
-   docker run -d \
-     --name project-iris \
-     -p 8008:8008 \
-     -v $(pwd)/backend/video.mp4:/app/backend/video.mp4 \
-     project-iris:latest
-   ```
-
----
-
 ## 📹 Using Custom MP4 Video Input
 
 To run Project Iris against your own office video feed:

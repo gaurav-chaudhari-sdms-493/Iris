@@ -166,6 +166,33 @@ class IrisOrchestrator:
 
         return self.get_telemetry()
 
+    def control_player(self, action: str, value=None):
+        """Dispatches video player control commands to stream_gen."""
+        if action == "play":
+            self.stream_gen.play()
+        elif action == "pause":
+            self.stream_gen.pause()
+        elif action == "toggle":
+            self.stream_gen.toggle_play_pause()
+        elif action == "seek":
+            if value is not None:
+                self.stream_gen.seek(float(value))
+        elif action == "seek_relative":
+            if value is not None:
+                self.stream_gen.seek_relative(float(value))
+        elif action == "step":
+            if value is not None:
+                self.stream_gen.step_frame(int(value))
+        elif action == "set_speed":
+            if value is not None:
+                self.stream_gen.set_speed(float(value))
+        elif action == "set_source":
+            if value is not None:
+                self.stream_gen.set_source(int(value))
+        elif action == "live":
+            self.stream_gen.jump_to_live()
+        return self.stream_gen.get_player_status()
+
     def get_telemetry(self):
         """Returns snapshot payload for Frontend Dashboard (Section 8 requirements)."""
         relay_state = self.tuya.get_state()
@@ -181,6 +208,7 @@ class IrisOrchestrator:
             "ac_state": broadlink_state["ac"],
             "tv_state": broadlink_state["tv"],
             "relays": relay_state,
+            "player_state": self.stream_gen.get_player_status(),
             "energy_metrics": {
                 "active_kw": round(self.active_power_kw, 2),
                 "kwh_saved_today": round(self.total_kwh_saved, 3),
@@ -189,3 +217,4 @@ class IrisOrchestrator:
             "motion_boxes": self.latest_motion_boxes,
             "person_boxes": self.latest_person_boxes
         }
+

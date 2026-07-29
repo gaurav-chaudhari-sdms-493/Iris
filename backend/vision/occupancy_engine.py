@@ -52,7 +52,7 @@ class OccupancyEngine:
                 for box in r.boxes:
                     cls_id = int(box.cls[0])
                     conf = float(box.conf[0])
-                    if cls_id == 0 and conf >= 0.20: # Class 0 = Person
+                    if cls_id == 0 and conf >= 0.60: # Class 0 = Person
                         headcount += 1
                         xyxy = box.xyxy[0].tolist()
                         bx1, by1, bx2, by2 = xyxy

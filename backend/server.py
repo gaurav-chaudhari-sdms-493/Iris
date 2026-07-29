@@ -47,6 +47,10 @@ class ACRequest(BaseModel):
     mode: str = "COOL"
     fan_speed: str = "AUTO"
 
+class PlayerControlRequest(BaseModel):
+    action: str
+    value: str | int | float | bool | None = None
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -135,6 +139,12 @@ async def set_ac(req: ACRequest):
     )
     return {"status": "success" if res else "failed", "ac": orchestrator.broadlink.ac_state}
 
+@app.post("/api/player/control")
+async def player_control(req: PlayerControlRequest):
+    """Executes video player controls (play, pause, seek, step, speed, source)."""
+    res = orchestrator.control_player(req.action, req.value)
+    return {"status": "success", "player_state": res}
+
 @app.get("/video_feed")
 async def video_feed():
     """MJPEG stream endpoint for real-time video preview in React frontend."""
@@ -196,6 +206,8 @@ async def websocket_telemetry(websocket: WebSocket):
                 elif action == "headcount_simulate":
                     # Debug slider simulation for headcount testing
                     orchestrator.headcount = int(msg.get("count", 2))
+                elif action == "player_control":
+                    orchestrator.control_player(msg.get("control_action"), msg.get("value"))
             except Exception as e:
                 logger.error(f"Error handling WebSocket message: {e}")
 

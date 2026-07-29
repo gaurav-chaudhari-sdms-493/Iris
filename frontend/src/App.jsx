@@ -115,6 +115,22 @@ export default function App() {
     sendWsAction({ action: 'headcount_simulate', count });
   };
 
+  const handlePlayerControl = async (controlAction, value = null) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      sendWsAction({ action: 'player_control', control_action: controlAction, value });
+    } else {
+      try {
+        await fetch('/api/player/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: controlAction, value })
+        });
+      } catch (e) {
+        console.error("Failed REST player control:", e);
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 max-w-7xl mx-auto space-y-6">
       
@@ -152,7 +168,11 @@ export default function App() {
 
       {/* Grid: CCTV Stream & 2D Spatial Map */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <LiveFeed telemetry={telemetry} onSimulateHeadcount={handleSimulateHeadcount} />
+        <LiveFeed 
+          telemetry={telemetry} 
+          onSimulateHeadcount={handleSimulateHeadcount}
+          onPlayerControl={handlePlayerControl}
+        />
         <SpatialMap
           zoneStates={telemetry?.zone_states}
           relays={telemetry?.relays}
