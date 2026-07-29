@@ -1,6 +1,6 @@
 """
 Non-Blocking Async Orchestration Engine
-Coordinates OpenCV fast motion detection, 30-second YOLO headcount polling,
+Coordinates OpenCV fast motion detection, real-time YOLO headcount polling,
 hardware state updates, and energy savings calculations without RTSP buffer lag.
 FSD Reference: Section 7
 """
@@ -10,7 +10,8 @@ import asyncio
 import logging
 from config import (
     SPATIAL_ZONES, SWITCH_MAPPINGS, OCCUPANCY_POLL_INTERVAL_SEC,
-    VACANCY_SHUTOFF_STRIKES, BASE_KWH_RATE, FULL_LOAD_POWER_KW, IDLE_LOAD_POWER_KW,
+    LB_AUTO_OFF_SEC, LP_AUTO_OFF_SEC, AC_AUTO_OFF_SEC,
+    BASE_KWH_RATE, FULL_LOAD_POWER_KW, IDLE_LOAD_POWER_KW,
     USE_SIMULATED_STREAM
 )
 from hardware import TuyaRelayManager, BroadlinkIRManager
@@ -19,7 +20,7 @@ from vision import FastMotionEngine, OccupancyEngine, SyntheticStreamGenerator
 logger = logging.getLogger("iris.orchestrator")
 
 class IrisOrchestrator:
-    def __init__ (self):
+    def __init__(self):
         self.tuya = TuyaRelayManager()
         self.broadlink = BroadlinkIRManager()
         self.motion_engine = FastMotionEngine()
@@ -29,27 +30,43 @@ class IrisOrchestrator:
         # System State Variables
         self.is_running = False
         self.system_mode = "AUTO"  # AUTO, MANUAL, PRESENTATION, POWER_SAVING
-        self.headcount = 2
+        self.headcount = 0
         self.last_ai_check = time.time()
         self.zero_occupancy_counter = 0
         self.start_timestamp = time.time()
 
+        # Device Auto-Off Vacancy Tracking
+        self.vacancy_start_timestamp = time.time()
+        self.lb_auto_off_done = True
+        self.lp_auto_off_done = True
+        self.ac_auto_off_done = True
+
         # Active Zone Motion State
-        self.zone_states = {z_id: True for z_id in SPATIAL_ZONES}
+        self.zone_states = {z_id: False for z_id in SPATIAL_ZONES}
         self.zone_motion_levels = {z_id: 0 for z_id in SPATIAL_ZONES}
         
         # Energy metrics
         self.total_kwh_saved = 0.42
         self.total_cost_saved = round(0.42 * BASE_KWH_RATE, 2)
-        self.active_power_kw = FULL_LOAD_POWER_KW
+        self.active_power_kw = IDLE_LOAD_POWER_KW
 
         # Motion bounding boxes & detection overlays
         self.latest_motion_boxes = []
         self.latest_person_boxes = []
 
-        # Turn ON initial lighting default
-        self._apply_zone_lighting("Zone_1_Upper", True)
-        self._apply_zone_lighting("Zone_2_Lower", True)
+        # Turn OFF all devices initially at startup
+        self._turn_off_all_devices()
+
+    def _turn_off_all_devices(self):
+        """Initializes system with all devices (lights, TV, AC) OFF at startup."""
+        for mod in ["A", "B"]:
+            for ch in [1, 2, 3, 4]:
+                self.tuya.set_relay_channel(mod, ch, False)
+        self.broadlink.send_ac_command(24, power="OFF")
+        self.broadlink.toggle_tv_power("OFF")
+        for z_id in SPATIAL_ZONES:
+            self.zone_states[z_id] = False
+        self.active_power_kw = IDLE_LOAD_POWER_KW
 
     def _apply_zone_lighting(self, zone_id: str, turn_on: bool):
         """Applies relay commands for all physical lights assigned to a spatial zone."""
@@ -62,6 +79,7 @@ class IrisOrchestrator:
 
     def trigger_manual_switch(self, switch_id: str, state: bool):
         """Manual override from switchboard UI."""
+        self.system_mode = "MANUAL"
         if switch_id not in SWITCH_MAPPINGS:
             return False
         sw = SWITCH_MAPPINGS[switch_id]
@@ -93,20 +111,25 @@ class IrisOrchestrator:
     def process_telemetry_step(self, frame):
         """
         Core non-blocking execution loop step called at 5 FPS.
-        FSD Section 7 Logic.
+        FSD Section 7 Logic with device-specific auto-off timers:
+        - Light Bulbs (LB): 3 seconds
+        - LED Panels (LP): 5 seconds
+        - Air Conditioner (AC): 10 Minutes (600s)
         """
         current_time = time.time()
         
+        # OPTIMIZATION: If video stream is paused, suspend heavy motion & YOLO CPU calculation
+        if getattr(self.stream_gen, "is_paused", False):
+            return self.get_telemetry()
+
         # 1. Continuous Fast Motion Detection (5 FPS)
         motion_res = self.motion_engine.process_frame(frame)
         self.latest_motion_boxes = motion_res["contours"]
         self.zone_motion_levels = motion_res["zone_motion_levels"]
 
-        # Motion detection updated for overlay telemetry tracking (No automatic device switching on motion)
-
-        # 2. Real-Time 1-Second YOLO Occupancy Polling Loop
+        # 2. Real-Time Occupancy Polling Loop
         if current_time - self.last_ai_check >= OCCUPANCY_POLL_INTERVAL_SEC:
-            logger.info("[IrisOrchestrator] Running 1-Second Real-Time YOLO Occupancy Polling...")
+            logger.info("[IrisOrchestrator] Running Real-Time YOLO Occupancy Polling...")
             occ_res = self.occupancy_engine.count_occupants(frame)
             self.headcount = occ_res["total_headcount"]
             self.latest_person_boxes = occ_res["boxes"]
@@ -114,18 +137,32 @@ class IrisOrchestrator:
 
             if self.system_mode == "AUTO":
                 if self.headcount > 0:
-                    self.zero_occupancy_counter = 0
+                    # Occupants present -> re-energize all devices if previously shut off
+                    was_vacant = (self.vacancy_start_timestamp is not None) or self.lb_auto_off_done or self.lp_auto_off_done or self.ac_auto_off_done
                     
-                    # Auto re-energize spatial zone lights where people are detected
-                    for z_id, count in occ_res.get("zone_counts", {}).items():
-                        if count > 0 and not self.zone_states.get(z_id, False):
-                            logger.info(f"[Auto AI] Person detected in {z_id}. Turning ON zone lights.")
-                            self._apply_zone_lighting(z_id, True)
+                    if was_vacant:
+                        logger.info(f"[Auto-On AI] Person(s) re-detected (Headcount: {self.headcount}). Auto-starting all light circuits & AC!")
+                        # Turn ON all Light Bulb relays (LB1-LB12)
+                        self.tuya.set_relay_channel("A", 3, True) # S7 TV Area Bulbs
+                        self.tuya.set_relay_channel("A", 4, True) # S4 Upper Bulbs
+                        self.tuya.set_relay_channel("B", 1, True) # S2 Lower Bulbs
+                        self.tuya.set_relay_channel("B", 2, True) # S12 Far Bulbs
+                        # Turn ON all LED Panel relays (LP1-LP4)
+                        self.tuya.set_relay_channel("A", 1, True) # S3 Upper LED Panels
+                        self.tuya.set_relay_channel("A", 2, True) # S10 Lower LED Panels
+                        # Turn ON TV Power
+                        self.broadlink.toggle_tv_power("ON")
 
-                    # If all lights were OFF, turn on default active zone lights
-                    if not any(self.zone_states.values()):
-                        for z_id in SPATIAL_ZONES:
-                            self._apply_zone_lighting(z_id, True)
+                    # Reset vacancy tracking flags
+                    self.vacancy_start_timestamp = None
+                    self.zero_occupancy_counter = 0
+                    self.lb_auto_off_done = False
+                    self.lp_auto_off_done = False
+                    self.ac_auto_off_done = False
+                    
+                    # Ensure spatial zone state tracking reflects powered lights
+                    for z_id in SPATIAL_ZONES:
+                        self.zone_states[z_id] = True
 
                     if self.headcount >= 4:
                         # High occupancy -> Lower AC Temp to 22°C (High Fan)
@@ -136,18 +173,36 @@ class IrisOrchestrator:
                         logger.info("Standard Occupancy (<4). Setting AC to 24°C Cool Auto.")
                         self.broadlink.send_ac_command(24, power="ON", mode="COOL", fan="AUTO")
                 else:
+                    # Headcount == 0 (Zero Occupancy)
                     self.zero_occupancy_counter += 1
-                    logger.warning(f"Zero Occupancy check strike {self.zero_occupancy_counter}/{VACANCY_SHUTOFF_STRIKES}")
-                    
-                    # 3 consecutive zero occupancy checks (3 seconds) -> Vacancy Shutoff
-                    if self.zero_occupancy_counter >= VACANCY_SHUTOFF_STRIKES:
-                        logger.info("[Project Iris] Vacancy confirmed (0 occupants). Office energy shutoff engaged.")
-                        # Turn off all zone lighting relays
-                        for z_id in SPATIAL_ZONES:
-                            self._apply_zone_lighting(z_id, False)
-                        # Turn off AC and TV
+                    if self.vacancy_start_timestamp is None:
+                        self.vacancy_start_timestamp = current_time
+
+                    vacancy_duration = current_time - self.vacancy_start_timestamp
+                    logger.info(f"[Auto-Off AI] Zero Occupancy Duration: {vacancy_duration:.1f}s")
+
+                    # RULE 1: Light Bulbs (LB) Auto-OFF after 3 seconds
+                    if vacancy_duration >= LB_AUTO_OFF_SEC and not self.lb_auto_off_done:
+                        logger.info(f"[Auto-Off AI] {LB_AUTO_OFF_SEC}s Vacancy -> Auto Turning OFF Light Bulbs (S7, S4, S2, S12)...")
+                        self.tuya.set_relay_channel("A", 3, False) # S7 TV Area Bulbs
+                        self.tuya.set_relay_channel("A", 4, False) # S4 Upper Bulbs
+                        self.tuya.set_relay_channel("B", 1, False) # S2 Lower Bulbs
+                        self.tuya.set_relay_channel("B", 2, False) # S12 Far Bulbs
+                        self.lb_auto_off_done = True
+
+                    # RULE 2: LED Panels (LP) Auto-OFF after 5 seconds
+                    if vacancy_duration >= LP_AUTO_OFF_SEC and not self.lp_auto_off_done:
+                        logger.info(f"[Auto-Off AI] {LP_AUTO_OFF_SEC}s Vacancy -> Auto Turning OFF LED Panels (S3, S10)...")
+                        self.tuya.set_relay_channel("A", 1, False) # S3 Upper LED Panels
+                        self.tuya.set_relay_channel("A", 2, False) # S10 Lower LED Panels
+                        self.lp_auto_off_done = True
+
+                    # RULE 3: Air Conditioner (AC) Auto-OFF after 10 Minutes (600 seconds)
+                    if vacancy_duration >= AC_AUTO_OFF_SEC and not self.ac_auto_off_done:
+                        logger.info(f"[Auto-Off AI] {AC_AUTO_OFF_SEC}s (10 Minutes) Vacancy -> Auto Turning OFF Air Conditioner & TV...")
                         self.broadlink.send_ac_command(24, power="OFF")
                         self.broadlink.toggle_tv_power("OFF")
+                        self.ac_auto_off_done = True
 
             self.last_ai_check = current_time
 
@@ -217,4 +272,3 @@ class IrisOrchestrator:
             "motion_boxes": self.latest_motion_boxes,
             "person_boxes": self.latest_person_boxes
         }
-

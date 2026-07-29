@@ -3,13 +3,15 @@ import LiveFeed from './components/LiveFeed';
 import SpatialMap from './components/SpatialMap';
 import Telemetry from './components/Telemetry';
 import Switchboard from './components/Switchboard';
-import Presets from './components/Presets';
-import { Eye, Activity } from 'lucide-react';
+import SystemLog from './components/SystemLog';
+import { Eye, TrendingDown, Zap } from 'lucide-react';
 
 export default function App() {
   const [telemetry, setTelemetry] = useState(null);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef(null);
+
+  const metrics = telemetry?.energy_metrics ?? { active_kw: 1.8, kwh_saved_today: 0.42, cost_saved_usd: 0.06 };
 
   useEffect(() => {
     let isDisposed = false;
@@ -61,8 +63,19 @@ export default function App() {
       isDisposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.close();
+        const socket = wsRef.current;
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+
+        if (socket.readyState === WebSocket.CONNECTING) {
+          socket.onopen = () => {
+            try { socket.close(); } catch (e) {}
+          };
+        } else {
+          try { socket.close(); } catch (e) {}
+        }
       }
     };
   }, []);
@@ -74,38 +87,43 @@ export default function App() {
   };
 
   const handleToggleSwitch = async (switchId, state) => {
-    sendWsAction({ action: 'override', switch_id: switchId, state });
-    try {
-      await fetch('/api/override', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ switch_id: switchId, state })
-      });
-    } catch (e) {
-      console.error("Failed REST override:", e);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      sendWsAction({ action: 'override', switch_id: switchId, state });
+    } else {
+      try {
+        await fetch('/api/override', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ switch_id: switchId, state })
+        });
+      } catch (e) {
+        console.error("Failed REST override:", e);
+      }
     }
   };
 
-  const handleSelectPreset = async (preset) => {
-    sendWsAction({ action: 'preset', preset });
-    try {
-      await fetch('/api/mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: preset })
-      });
-    } catch (e) {
-      console.error("Failed REST mode set:", e);
+  const handleAcChange = async (acParams, powerArg) => {
+    let payload = {};
+    if (typeof acParams === 'object' && acParams !== null) {
+      payload = acParams;
+    } else {
+      payload = { temperature: acParams, power: powerArg };
     }
-  };
 
-  const handleAcChange = async (temperature, power) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      sendWsAction({ action: 'ac_control', ...payload });
+    }
+
     try {
-      await fetch('/api/ac', {
+      const res = await fetch('/api/ac', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ temperature, power, mode: 'COOL', fan_speed: 'AUTO' })
+        body: JSON.stringify(payload)
       });
+      const data = await res.json();
+      if (data && data.ac_state) {
+        setTelemetry(prev => prev ? { ...prev, ac_state: data.ac_state } : prev);
+      }
     } catch (e) {
       console.error("Failed REST AC set:", e);
     }
@@ -118,56 +136,84 @@ export default function App() {
   const handlePlayerControl = async (controlAction, value = null) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       sendWsAction({ action: 'player_control', control_action: controlAction, value });
-    } else {
-      try {
-        await fetch('/api/player/control', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: controlAction, value })
-        });
-      } catch (e) {
-        console.error("Failed REST player control:", e);
+    }
+    try {
+      const res = await fetch('/api/player/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: controlAction, value })
+      });
+      const data = await res.json();
+      if (data && data.player_state) {
+        setTelemetry(prev => prev ? { ...prev, player_state: data.player_state } : prev);
       }
+    } catch (e) {
+      console.error("Player control dispatch error:", e);
+    }
+  };
+
+  const handleSetMode = async (mode) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      sendWsAction({ action: 'preset', preset: mode });
+    }
+    try {
+      const res = await fetch('/api/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode })
+      });
+      const data = await res.json();
+      if (data && data.telemetry) {
+        setTelemetry(data.telemetry);
+      }
+    } catch (e) {
+      console.error("Failed REST mode set:", e);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 w-full space-y-6">
       
-      {/* Header Bar */}
-      <header className="iris-card flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="p-3 rounded-2xl bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20">
-            <Eye className="w-7 h-7" />
+      {/* Compact Top Header Bar */}
+      <header className="iris-card flex flex-wrap items-center justify-between gap-3 py-2 px-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20">
+            <Eye className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-xl md:text-2xl font-black tracking-tight text-slate-100 flex items-center gap-2">
+            <h1 className="text-base md:text-lg font-black tracking-tight text-slate-100 flex items-center gap-2">
               PROJECT IRIS
-              <span className="text-xs font-mono font-semibold px-2.5 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                v1.0 FSD Engine
-              </span>
             </h1>
-            <p className="text-xs text-slate-400 font-mono">Hybrid IoT & Computer Vision Office Automation System</p>
+            <p className="text-[11px] text-slate-400 font-mono">Hybrid IoT & Computer Vision Office Automation System</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className={`px-3.5 py-1.5 rounded-lg border text-xs font-mono flex items-center gap-2 ${
-            wsConnected 
-              ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40' 
-              : 'bg-amber-950/40 text-amber-300 border-amber-500/40'
-          }`}>
-            <Activity className="w-4 h-4" />
-            <span>{wsConnected ? 'WebSocket Telemetry Live' : 'Connecting to Engine...'}</span>
+        {/* Daily Energy Savings Header Badge */}
+        <div className="flex items-center gap-3 bg-slate-900/90 border border-amber-500/30 px-3.5 py-1.5 rounded-xl shadow-md">
+          <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <TrendingDown className="w-4 h-4" />
+          </div>
+          <div className="flex items-center gap-3">
+            <div>
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Daily Energy Savings</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-sm font-extrabold font-mono text-amber-400">{metrics.kwh_saved_today} kWh</span>
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                  ${metrics.cost_saved_usd} Saved
+                </span>
+              </div>
+            </div>
+            <div className="h-6 w-[1px] bg-slate-800" />
+            <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Load: {metrics.active_kw} kW</span>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Telemetry Metrics Row */}
-      <Telemetry telemetry={telemetry} onAcChange={handleAcChange} />
-
-      {/* Grid: CCTV Stream & 2D Spatial Map */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* PRIMARY FEATURE SECTION (TOP FOCUS): Side-by-Side Grid (Left: Overhead CCTV Stream | Right: 2D Ceiling Topology) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
         <LiveFeed 
           telemetry={telemetry} 
           onSimulateHeadcount={handleSimulateHeadcount}
@@ -178,21 +224,17 @@ export default function App() {
           relays={telemetry?.relays}
           tvState={telemetry?.tv_state}
           acState={telemetry?.ac_state}
+          systemMode={telemetry?.system_mode}
           onToggleSwitch={handleToggleSwitch}
+          onSetMode={handleSetMode}
         />
       </div>
 
-      {/* Presets Macro Actions */}
-      <Presets
-        currentMode={telemetry?.system_mode}
-        onSelectPreset={handleSelectPreset}
-      />
-
-      {/* Physical 12-Gang Switchboard Overrides */}
-      <Switchboard
-        relays={telemetry?.relays}
-        tvState={telemetry?.tv_state}
-        onToggleSwitch={handleToggleSwitch}
+      {/* SECONDARY SECTION: AC Remote, Event Console & Physical Switchboard Overrides */}
+      <Telemetry 
+        telemetry={telemetry} 
+        onAcChange={handleAcChange} 
+        onToggleSwitch={handleToggleSwitch} 
       />
 
       {/* Footer */}

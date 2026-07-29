@@ -15,15 +15,46 @@ class OccupancyEngine:
     def __init__(self, model_name=YOLO_MODEL_PATH):
         self.model_name = model_name
         self.model = None
+        self.device = "cpu"
         self.use_mock = False
         self._init_model()
 
     def _init_model(self):
         try:
+            import os
+            import torch
             from ultralytics import YOLO
-            logger.info(f"Loading YOLO model: {self.model_name}...")
+
+            # Cap CPU processing threads to 50% available cores
+            total_cores = os.cpu_count() or 4
+            half_cores = max(1, total_cores // 2)
+            try:
+                torch.set_num_threads(half_cores)
+            except Exception:
+                pass
+
+            # Prioritize GPU inference (CUDA -> MPS -> CPU fallback)
+            if torch.cuda.is_available():
+                self.device = "cuda:0"
+                gpu_name = torch.cuda.get_device_name(0)
+                logger.info(f"GPU Hardware Detected ({gpu_name}). Prioritizing GPU inference on device [{self.device}]...")
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                self.device = "mps"
+                logger.info("Apple MPS GPU Acceleration Detected. Initializing YOLO on MPS GPU...")
+            else:
+                self.device = "cpu"
+                logger.info(f"No dedicated CUDA GPU detected. Falling back to CPU inference (Allocated {half_cores}/{total_cores} CPU threads).")
+
+            logger.info(f"Loading YOLO model weights from: {self.model_name}...")
             self.model = YOLO(self.model_name)
-            logger.info("YOLO model loaded successfully.")
+            
+            try:
+                self.model.to(self.device)
+                logger.info(f"YOLO model successfully assigned to device: {self.device}")
+            except Exception as e_dev:
+                logger.warning(f"Could not explicitly assign model device ({e_dev}). Will use device flag during predict calls.")
+
+            logger.info(f"YOLO Occupancy Engine initialized (Target Device: {self.device}).")
         except Exception as e:
             logger.warning(f"Failed to load YOLO model ({e}). Using synthetic detection fallback.")
             self.use_mock = True
@@ -42,7 +73,7 @@ class OccupancyEngine:
             return self._heuristic_occupancy(frame)
 
         try:
-            results = self.model(frame, verbose=False)
+            results = self.model(frame, device=self.device, verbose=False)
             h, w = frame.shape[:2]
             headcount = 0
             zone_counts = {z_id: 0 for z_id in SPATIAL_ZONES}
@@ -52,7 +83,7 @@ class OccupancyEngine:
                 for box in r.boxes:
                     cls_id = int(box.cls[0])
                     conf = float(box.conf[0])
-                    if cls_id == 0 and conf >= 0.60: # Class 0 = Person
+                    if cls_id == 0 and conf >= 0.70: # Class 0 = Person
                         headcount += 1
                         xyxy = box.xyxy[0].tolist()
                         bx1, by1, bx2, by2 = xyxy

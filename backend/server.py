@@ -8,6 +8,7 @@ import asyncio
 import cv2
 import json
 import logging
+from typing import Optional, Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -16,8 +17,25 @@ from pydantic import BaseModel
 from orchestrator import IrisOrchestrator
 from config import SWITCH_MAPPINGS, SPATIAL_ZONES
 
+import os
+import torch
+import cv2
+
+# Cap processing power to half of system threads (50% CPU allocation)
+total_cores = os.cpu_count() or 4
+half_cores = max(1, total_cores // 2)
+try:
+    torch.set_num_threads(half_cores)
+except Exception:
+    pass
+cv2.setNumThreads(half_cores)
+os.environ["OMP_NUM_THREADS"] = str(half_cores)
+os.environ["MKL_NUM_THREADS"] = str(half_cores)
+os.environ["OPENBLAS_NUM_THREADS"] = str(half_cores)
+
 logger = logging.getLogger("iris.server")
 logging.basicConfig(level=logging.INFO)
+logger.info(f"[CPU Power Management] Process allocated {half_cores} threads out of {total_cores} system cores (50% CPU limit).")
 
 app = FastAPI(title="Project Iris Backend Engine", version="1.0.0")
 
@@ -42,14 +60,14 @@ class ModeRequest(BaseModel):
     mode: str
 
 class ACRequest(BaseModel):
-    temperature: int
-    power: str = "ON"
-    mode: str = "COOL"
-    fan_speed: str = "AUTO"
+    temperature: Optional[int] = None
+    power: Optional[str] = None
+    mode: Optional[str] = None
+    fan_speed: Optional[str] = None
 
 class PlayerControlRequest(BaseModel):
     action: str
-    value: str | int | float | bool | None = None
+    value: Optional[Any] = None
 
 
 @app.on_event("startup")
@@ -131,18 +149,36 @@ async def set_system_mode(req: ModeRequest):
 @app.post("/api/ac")
 async def set_ac(req: ACRequest):
     """Manual AC control endpoint."""
-    res = orchestrator.broadlink.send_ac_command(
-        temp=req.temperature,
-        power=req.power,
-        mode=req.mode,
-        fan=req.fan_speed
-    )
-    return {"status": "success" if res else "failed", "ac": orchestrator.broadlink.ac_state}
+    current_ac = orchestrator.broadlink.ac_state
+    temp = req.temperature if req.temperature is not None else current_ac.get("temperature", 24)
+    power = req.power if req.power is not None else current_ac.get("power", "ON")
+    mode = req.mode if req.mode is not None else current_ac.get("mode", "COOL")
+    fan = req.fan_speed if req.fan_speed is not None else current_ac.get("fan_speed", "AUTO")
+    
+    orchestrator.broadlink.send_ac_command(temp, power=power, mode=mode, fan=fan)
+    res = orchestrator.broadlink.ac_state
+
+    if connected_websockets:
+        payload = json.dumps(orchestrator.get_telemetry())
+        for ws in list(connected_websockets):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                pass
+
+    return {"status": "success", "ac_state": res}
 
 @app.post("/api/player/control")
-async def player_control(req: PlayerControlRequest):
-    """Executes video player controls (play, pause, seek, step, speed, source)."""
+async def control_player(req: PlayerControlRequest):
+    """Player control endpoint (play, pause, toggle, seek, seek_relative, set_speed, set_source, step, live)."""
     res = orchestrator.control_player(req.action, req.value)
+    if connected_websockets:
+        payload = json.dumps(orchestrator.get_telemetry())
+        for ws in list(connected_websockets):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                pass
     return {"status": "success", "player_state": res}
 
 @app.get("/video_feed")
@@ -201,13 +237,20 @@ async def websocket_telemetry(websocket: WebSocket):
                         for z_id in SPATIAL_ZONES:
                             orchestrator._apply_zone_lighting(z_id, False)
                         orchestrator.broadlink.send_ac_command(24, power="OFF")
-                    elif msg.get("preset") == "AUTO":
-                        orchestrator.system_mode = "AUTO"
+                    elif msg.get("preset") in ["AUTO", "MANUAL"]:
+                        orchestrator.system_mode = msg.get("preset")
                 elif action == "headcount_simulate":
                     # Debug slider simulation for headcount testing
                     orchestrator.headcount = int(msg.get("count", 2))
                 elif action == "player_control":
                     orchestrator.control_player(msg.get("control_action"), msg.get("value"))
+                    if connected_websockets:
+                        payload = json.dumps(orchestrator.get_telemetry())
+                        for ws in list(connected_websockets):
+                            try:
+                                await ws.send_text(payload)
+                            except Exception:
+                                pass
             except Exception as e:
                 logger.error(f"Error handling WebSocket message: {e}")
 

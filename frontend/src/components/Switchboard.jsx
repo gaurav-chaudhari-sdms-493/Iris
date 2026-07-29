@@ -1,15 +1,27 @@
 import React from 'react';
 import { Sliders, ShieldAlert } from 'lucide-react';
 
-const SWITCH_DESCRIPTIONS = {
-  S1: { label: "TV Power (IR Blaster)", module: "Broadlink IR", type: "IR" },
-  S2: { label: "Lower Bulbs LB7, LB8, LB9", module: "Relay B • Ch 1", type: "Relay" },
-  S3: { label: "Upper LED Panels LP1, LP2", module: "Relay A • Ch 1", type: "Relay" },
-  S4: { label: "Upper Bulbs LB4, LB5, LB6", module: "Relay A • Ch 4", type: "Relay" },
-  S7: { label: "TV Area Bulbs LB1, LB2, LB3", module: "Relay A • Ch 3", type: "Relay" },
-  S10: { label: "Lower LED Panels LP3, LP4", module: "Relay A • Ch 2", type: "Relay" },
-  S12: { label: "Far Bulbs LB10, LB11, LB12", module: "Relay B • Ch 2", type: "Relay" },
-};
+const ALL_12_SWITCHES = [
+  // Row 1 Pair 1
+  { id: 'S1', label: 'TV Power', sub: 'Broadlink IR', isSpare: false, hasExtraGap: false },
+  { id: 'S2', label: 'Lower Bulbs', sub: 'LB7, LB8, LB9', isSpare: false, hasExtraGap: true },
+  // Row 1 Pair 2
+  { id: 'S3', label: 'Upper LED', sub: 'LP1, LP2', isSpare: false, hasExtraGap: false },
+  { id: 'S4', label: 'Upper Bulbs', sub: 'LB4, LB5, LB6', isSpare: false, hasExtraGap: true },
+  // Row 1 Pair 3
+  { id: 'S5', label: 'Aux Switch 5', sub: 'Spare Gang 5', isSpare: true, hasExtraGap: false },
+  { id: 'S6', label: 'Aux Switch 6', sub: 'Spare Gang 6', isSpare: true, hasExtraGap: false },
+
+  // Row 2 Pair 1
+  { id: 'S7', label: 'TV Bulbs', sub: 'LB1, LB2, LB3', isSpare: false, hasExtraGap: false },
+  { id: 'S8', label: 'Aux Switch 8', sub: 'Spare Gang 8', isSpare: true, hasExtraGap: true },
+  // Row 2 Pair 2
+  { id: 'S9', label: 'Aux Switch 9', sub: 'Spare Gang 9', isSpare: true, hasExtraGap: false },
+  { id: 'S10', label: 'Lower LED', sub: 'LP3, LP4', isSpare: false, hasExtraGap: true },
+  // Row 2 Pair 3
+  { id: 'S11', label: 'Aux Switch 11', sub: 'Spare Gang 11', isSpare: true, hasExtraGap: false },
+  { id: 'S12', label: 'Far Bulbs', sub: 'LB10, LB11, LB12', isSpare: false, hasExtraGap: false },
+];
 
 export default function Switchboard({ relays, tvState, onToggleSwitch }) {
   const relayA = relays?.Relay_A ?? { 1: false, 2: false, 3: false, 4: false };
@@ -27,58 +39,141 @@ export default function Switchboard({ relays, tvState, onToggleSwitch }) {
   };
 
   return (
-    <div className="iris-card">
-      <div className="flex items-center justify-between mb-4">
+    <div className="iris-card space-y-4">
+      {/* Switchboard Header */}
+      <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+          <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
             <Sliders className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-slate-100">12-Gang Physical Switchboard</h2>
-            <p className="text-xs text-slate-400 font-mono">AZIOT Parallel Relay Mapping & Manual Overrides</p>
+            <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+              Physical 12-Gang Switchboard
+            </h2>
           </div>
         </div>
-
-        <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-lg flex items-center gap-1.5">
-          <ShieldAlert className="w-3.5 h-3.5" /> Wall Override Active
-        </span>
       </div>
 
-      {/* Switchboard Grid Layout */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-        {Object.entries(SWITCH_DESCRIPTIONS).map(([swId, info]) => {
-          const isActive = getSwitchState(swId);
-          return (
-            <div
-              key={swId}
-              onClick={() => onToggleSwitch(swId, !isActive)}
-              className={`p-3.5 rounded-xl border cursor-pointer select-none transition-all flex items-center justify-between ${
-                isActive
-                  ? 'bg-cyan-950/30 border-cyan-500/60 text-slate-100 shadow-sm'
-                  : 'bg-slate-900/60 hover:bg-slate-800/70 border-slate-800 text-slate-400'
-              }`}
-            >
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-sm text-cyan-400">{swId}</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                    {info.module}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 mt-1 font-medium">{info.label}</p>
-              </div>
+      {/* SINGLE UNIFIED DARK TITANIUM WALL PLATE HOUSING */}
+      <div className="relative bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 border-2 border-slate-800 rounded-2xl p-4 md:p-5 shadow-2xl">
+        
+        {/* Chamfered Inner Frame */}
+        <div className="border border-slate-800/90 rounded-xl p-3 md:p-5 bg-slate-950/80 shadow-inner relative">
+          
+          {/* Metallic Corner Screws */}
+          <div className="absolute top-2.5 left-3 w-3 h-3 rounded-full bg-slate-700 border border-slate-600 shadow-inner flex items-center justify-center">
+            <div className="w-2 h-0.5 bg-slate-500 transform rotate-45" />
+          </div>
+          <div className="absolute top-2.5 right-3 w-3 h-3 rounded-full bg-slate-700 border border-slate-600 shadow-inner flex items-center justify-center">
+            <div className="w-2 h-0.5 bg-slate-500 transform -rotate-45" />
+          </div>
+          <div className="absolute bottom-2.5 left-3 w-3 h-3 rounded-full bg-slate-700 border border-slate-600 shadow-inner flex items-center justify-center">
+            <div className="w-2 h-0.5 bg-slate-500 transform rotate-12" />
+          </div>
+          <div className="absolute bottom-2.5 right-3 w-3 h-3 rounded-full bg-slate-700 border border-slate-600 shadow-inner flex items-center justify-center">
+            <div className="w-2 h-0.5 bg-slate-500 transform -rotate-12" />
+          </div>
 
-              {/* Toggle Switch Pill */}
-              <div
-                className={`w-10 h-6 rounded-full transition-colors p-1 flex items-center shrink-0 ml-2 ${
-                  isActive ? 'bg-cyan-500 justify-end' : 'bg-slate-700 justify-start'
-                }`}
-              >
-                <div className="w-4 h-4 rounded-full bg-white shadow-md transform transition-transform" />
-              </div>
-            </div>
-          );
-        })}
+          {/* 12 SWITCH GANGS IN 6 COLUMNS X 2 ROWS WITH EXTRA GAP SEPARATION AFTER S2, S4, S8, S10 */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 md:gap-4 my-1">
+            {ALL_12_SWITCHES.map((sw) => {
+              const isActive = getSwitchState(sw.id);
+              return (
+                <div
+                  key={sw.id}
+                  onClick={() => !sw.isSpare && onToggleSwitch && onToggleSwitch(sw.id, !isActive)}
+                  className={`flex flex-col items-center justify-between select-none p-2 rounded-xl transition-all duration-200 ${
+                    sw.hasExtraGap ? 'md:mr-6 lg:mr-8' : ''
+                  } ${
+                    sw.isSpare 
+                      ? 'bg-slate-900/20 opacity-40 cursor-not-allowed' 
+                      : 'bg-slate-900/40 hover:bg-slate-900/70 cursor-pointer'
+                  }`}
+                >
+                  {/* Switch ID & Label Above Socket */}
+                  <div className="text-center w-full mb-2">
+                    <div className="flex items-center justify-center gap-1">
+                      <span className={`text-xs font-mono font-black ${
+                        isActive ? 'text-emerald-400' : sw.isSpare ? 'text-slate-600' : 'text-red-400'
+                      }`}>
+                        {sw.id}
+                      </span>
+                    </div>
+                    <span className="text-xs font-bold text-slate-100 block mt-0.5 font-sans truncate" title={sw.label}>
+                      {sw.label}
+                    </span>
+                  </div>
+
+                  {/* RECESSED MODULAR SOCKET SLOT */}
+                  <div className={`relative w-14 h-28 rounded-xl border-2 p-1 transition-all flex items-center justify-center ${
+                    sw.isSpare
+                      ? 'bg-slate-950 border-slate-800 shadow-inner'
+                      : isActive
+                      ? 'bg-slate-950 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                      : 'bg-slate-950 border-red-500/60 shadow-[0_0_12px_rgba(239,68,68,0.25)]'
+                  }`}>
+                    
+                    {/* TACTILE VERTICAL WHITE ROCKER SWITCH */}
+                    <div 
+                      className={`w-full h-full rounded-lg transition-all duration-200 flex flex-col items-center justify-between p-1.5 border-2 select-none ${
+                        isActive
+                          ? 'bg-gradient-to-b from-slate-100 via-white to-slate-200 border-slate-300 shadow-[0_4px_8px_rgba(0,0,0,0.3)] -translate-y-0.5'
+                          : 'bg-gradient-to-b from-slate-200 via-slate-300 to-slate-400 border-slate-400 shadow-[inset_0_4px_8px_rgba(0,0,0,0.3)] translate-y-0.5'
+                      }`}
+                    >
+                      {/* TOP: OFF Indicator */}
+                      <div className="flex flex-col items-center gap-0.5 w-full">
+                        <div className={`w-2.5 h-2.5 rounded-full border transition-all ${
+                          !isActive 
+                            ? 'bg-red-500 border-red-200 shadow-[0_0_8px_#ef4444]' 
+                            : 'bg-slate-400/20 border-slate-400/30'
+                        }`} />
+                        <span className={`text-[8px] font-mono font-black tracking-tighter transition-all px-1 rounded ${
+                          !isActive 
+                            ? 'bg-red-500/20 text-red-600 border border-red-500/40 font-black' 
+                            : 'text-slate-400/50'
+                        }`}>
+                          OFF
+                        </span>
+                      </div>
+
+                      {/* Center Tactile Ridge */}
+                      <div className="w-5 h-0.5 bg-slate-400/60 rounded-full my-0.5" />
+
+                      {/* BOTTOM: ON Indicator */}
+                      <div className="flex flex-col items-center gap-0.5 w-full">
+                        <span className={`text-[8px] font-mono font-black tracking-tighter transition-all px-1 rounded ${
+                          isActive 
+                            ? 'bg-emerald-500/20 text-emerald-600 border border-emerald-500/40 font-black' 
+                            : 'text-slate-400/50'
+                        }`}>
+                          ON
+                        </span>
+                        <div className={`w-2.5 h-2.5 rounded-full border transition-all ${
+                          isActive 
+                            ? 'bg-emerald-500 border-emerald-200 shadow-[0_0_8px_#10b981]' 
+                            : 'bg-slate-400/20 border-slate-400/30'
+                        }`} />
+                      </div>
+
+                    </div>
+
+                  </div>
+
+                  {/* Subtitle Below Socket */}
+                  <div className="text-center w-full mt-2">
+                    <span className="text-[10px] font-mono text-slate-400 font-semibold block truncate" title={sw.sub}>
+                      {sw.sub}
+                    </span>
+                  </div>
+
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+
       </div>
     </div>
   );
