@@ -49,7 +49,31 @@ class SyntheticStreamGenerator:
         self._load_active_source()
 
     def _discover_video_sources(self):
-        """Recursively scans backend/data (including subfolders) for video files."""
+        """Registers live CCTV sources and scans backend/data for video files."""
+        cctv_ip = os.environ.get("CCTV_IP", "192.168.0.21")
+        found = []
+
+        # 1. PRIMARY DEFAULT SOURCE (INDEX 0): Hikvision Camera 06
+        found.append({
+            "id": 0,
+            "name": f"[Live Camera] Hikvision Camera 06 ({cctv_ip})",
+            "path": f"http://{cctv_ip}/ISAPI/Streaming/channels/601/picture",
+            "type": "live_cctv"
+        })
+
+        # 2. Add remaining Hikvision channels (1, 2, 3, 4, 5, 7..16)
+        for ch_num in range(1, 17):
+            if ch_num == 6:
+                continue
+            ch_code = f"{ch_num}01"
+            found.append({
+                "id": len(found),
+                "name": f"[Live Camera] Hikvision Camera {ch_num:02d} ({cctv_ip})",
+                "path": f"http://{cctv_ip}/ISAPI/Streaming/channels/{ch_code}/picture",
+                "type": "live_cctv"
+            })
+
+        # 3. Discover local MP4 demo videos
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # backend dir
         root_dir = os.path.dirname(base_dir)  # project root
 
@@ -60,7 +84,6 @@ class SyntheticStreamGenerator:
         ]
 
         valid_extensions = ('.mp4', '.avi', '.mov', '.mkv', '.webm')
-        found = []
         seen_paths = set()
 
         for s_root in search_roots:
@@ -92,7 +115,7 @@ class SyntheticStreamGenerator:
         logger.info(f"StreamGenerator discovered {len(found)} video sources: {[s['name'] for s in found]}")
 
     def _load_active_source(self):
-        """Initializes OpenCV VideoCapture for the currently selected source."""
+        """Initializes VideoCapture / Live Stream for the currently selected source."""
         if not self.available_sources:
             return
 
@@ -104,6 +127,15 @@ class SyntheticStreamGenerator:
             self.cap = None
 
         self.video_source_path = src["path"]
+        if src["type"] == "live_cctv":
+            self.total_frames = 999999
+            self.video_fps = 15.0
+            self.duration_sec = 99999.0
+            self.current_frame_pos = 0
+            logger.info(f"StreamGenerator connected to Live CCTV Camera [{src['name']}] -> {src['path']}")
+            self._read_and_cache_frame(0)
+            return
+
         if src["type"] == "video" and src["path"] and os.path.exists(src["path"]):
             self.cap = cv2.VideoCapture(src["path"])
             if self.cap.isOpened():
@@ -125,9 +157,35 @@ class SyntheticStreamGenerator:
         self._read_and_cache_frame(0)
 
     def _read_and_cache_frame(self, target_frame=None):
-        """Reads frame from VideoCapture at target_frame (or current pos) and updates self.last_frame."""
+        """Reads frame from VideoCapture or Live CCTV stream and updates self.last_frame."""
         if target_frame is not None:
             self.current_frame_pos = max(0, min(int(target_frame), max(0, self.total_frames - 1)))
+
+        idx = max(0, min(self.active_source_index, len(self.available_sources) - 1))
+        src = self.available_sources[idx]
+
+        if src.get("type") == "live_cctv":
+            try:
+                if not hasattr(self, "cctv_session") or self.cctv_session is None:
+                    import requests
+                    from requests.auth import HTTPDigestAuth
+                    usr = os.environ.get("CCTV_USER", "admin")
+                    pwd = os.environ.get("CCTV_PASS", "admin123")
+                    self.cctv_session = requests.Session()
+                    self.cctv_session.auth = HTTPDigestAuth(usr, pwd)
+
+                url = src["path"]
+                r = self.cctv_session.get(url, timeout=1.5)
+                if r.status_code == 200:
+                    img_np = np.frombuffer(r.content, dtype=np.uint8)
+                    frame = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        if frame.shape[1] != self.width or frame.shape[0] != self.height:
+                            frame = cv2.resize(frame, (self.width, self.height))
+                        self.last_frame = frame.copy()
+                        return frame.copy()
+            except Exception as e:
+                logger.error(f"Live CCTV capture error: {e}")
 
         if self.cap and self.cap.isOpened():
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_pos)
@@ -151,12 +209,22 @@ class SyntheticStreamGenerator:
 
     def pause(self):
         with self.lock:
+            idx = max(0, min(self.active_source_index, len(self.available_sources) - 1))
+            src = self.available_sources[idx] if self.available_sources else {}
+            if src.get("type") == "live_cctv":
+                self.is_paused = False
+                return
             self.is_paused = True
             self._read_and_cache_frame()
             logger.info("Player: PAUSE")
 
     def toggle_play_pause(self):
         with self.lock:
+            idx = max(0, min(self.active_source_index, len(self.available_sources) - 1))
+            src = self.available_sources[idx] if self.available_sources else {}
+            if src.get("type") == "live_cctv":
+                self.is_paused = False
+                return False
             self.is_paused = not self.is_paused
             if self.is_paused:
                 self._read_and_cache_frame()
@@ -209,9 +277,11 @@ class SyntheticStreamGenerator:
     def get_player_status(self):
         with self.lock:
             current_sec = round(self.current_frame_pos / self.video_fps, 1) if self.video_fps > 0 else 0.0
-            src_name = self.available_sources[self.active_source_index]["name"] if self.available_sources else "Unknown"
+            src = self.available_sources[self.active_source_index] if self.available_sources else {}
+            src_name = src.get("name", "Unknown")
+            is_cctv = src.get("type") == "live_cctv"
             return {
-                "is_paused": self.is_paused,
+                "is_paused": False if is_cctv else self.is_paused,
                 "current_time": current_sec,
                 "duration": round(self.duration_sec, 1),
                 "current_frame": self.current_frame_pos,
@@ -220,18 +290,29 @@ class SyntheticStreamGenerator:
                 "playback_speed": self.playback_speed,
                 "active_source_id": self.active_source_index,
                 "source_name": src_name,
+                "source_type": src.get("type", "video"),
                 "available_sources": [
                     {"id": s["id"], "name": s["name"], "type": s["type"]} for s in self.available_sources
                 ],
-                "is_live": not self.is_paused and self.playback_speed == 1.0
+                "is_live": is_cctv or (not self.is_paused and self.playback_speed == 1.0)
             }
 
     # ------------------ Frame Generation & Streaming ------------------
     def read_frame(self, zone_states=None, active_headcount=3):
-        """Reads frame from real MP4 video file or synthetic stream, respecting pause and speed."""
+        """Reads frame from real MP4 video file, live CCTV camera, or synthetic stream."""
         with self.lock:
-            # 1. If paused and we already have a cached frame, return cached frame
-            if self.is_paused and self.last_frame is not None:
+            idx = max(0, min(self.active_source_index, len(self.available_sources) - 1))
+            src = self.available_sources[idx] if self.available_sources else {}
+            is_cctv = src.get("type") == "live_cctv"
+
+            # 0. Live CCTV Camera feed fetch
+            if is_cctv:
+                frame = self._read_and_cache_frame()
+                if frame is not None:
+                    return frame
+
+            # 1. If paused AND NOT live CCTV, return cached frame
+            if self.is_paused and not is_cctv and self.last_frame is not None:
                 return self.last_frame.copy()
 
             # Handle fractional playback speed slow down (e.g. 0.5x, 0.25x)

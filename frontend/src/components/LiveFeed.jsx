@@ -107,6 +107,8 @@ export default function LiveFeed({ telemetry, onSimulateHeadcount, onPlayerContr
     }
   };
 
+  const sourceType = playerState?.source_type ?? 'video';
+  const isCctv = sourceType === 'live_cctv';
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
 
   return (
@@ -130,8 +132,8 @@ export default function LiveFeed({ telemetry, onSimulateHeadcount, onPlayerContr
               <h2 className="text-sm font-extrabold text-slate-100 flex items-center gap-2">
                 Overhead CCTV Stream
                 <span className="flex h-2.5 w-2.5 relative">
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isPaused ? 'bg-amber-400' : 'bg-emerald-400'} opacity-75`}></span>
-                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isPaused ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isPaused && !isCctv ? 'bg-amber-400' : 'bg-emerald-400'} opacity-75`}></span>
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isPaused && !isCctv ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
                 </span>
               </h2>
               <p className="text-xs text-slate-400 font-mono truncate max-w-[220px] md:max-w-xs">
@@ -183,13 +185,15 @@ export default function LiveFeed({ telemetry, onSimulateHeadcount, onPlayerContr
           isFullscreen ? 'flex-1 h-full relative' : ''
         }`}>
           
-          {/* Top: Video Stream Canvas (Click to Stop / Resume) */}
+          {/* Top: Video Stream Canvas */}
           <div 
-            onClick={() => onPlayerControl(isPaused ? 'play' : 'pause')}
-            className={`relative flex items-center justify-center bg-slate-950 select-none cursor-pointer group ${
+            onClick={() => !isCctv && onPlayerControl(isPaused ? 'play' : 'pause')}
+            className={`relative flex items-center justify-center bg-slate-950 select-none ${
+              isCctv ? '' : 'cursor-pointer group'
+            } ${
               isFullscreen ? 'flex-1 w-full h-full' : 'aspect-video'
             }`}
-            title={isPaused ? "Click to Resume Video" : "Click to Stop Video"}
+            title={isCctv ? "Live Hikvision Camera Stream" : (isPaused ? "Click to Resume Video" : "Click to Stop Video")}
           >
             {!streamError ? (
               <img
@@ -230,8 +234,8 @@ export default function LiveFeed({ telemetry, onSimulateHeadcount, onPlayerContr
               )}
             </div>
 
-            {/* Centered Play Button Overlay when Paused */}
-            {isPaused && (
+            {/* Centered Play Button Overlay when Paused (Recorded Video Only) */}
+            {isPaused && !isCctv && (
               <div 
                 className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-[2px] cursor-pointer transition"
               >
