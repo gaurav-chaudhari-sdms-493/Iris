@@ -41,7 +41,7 @@ class TuyaRelayManager:
 
         self._init_cloud()
         if not self.mock_mode:
-            self._connect_device()
+            threading.Thread(target=self._connect_device, daemon=True).start()
 
     def _init_cloud(self):
         """Initializes Tuya Cloud API client."""

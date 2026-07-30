@@ -14,7 +14,7 @@ cd /home/stark/JetBrainsProjects/Iris/backend
 ./iris_env/bin/uvicorn server:app --host 0.0.0.0 --port 8008 &
 BACKEND_PID=$!
 
-sleep 2
+sleep 4
 
 # Start Frontend Vite Dev Server on Port 5173
 echo "[2/2] Launching React Dashboard on http://localhost:5173..."
