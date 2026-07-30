@@ -156,29 +156,39 @@ class IrisOrchestrator:
                     self.broadlink.toggle_tv_power("ON")
 
                     if self.headcount > HEADCOUNT_PANEL_ONLY_MAX:
-                        # High occupancy (>3 occupants) -> Turn ON ALL lights & set AC to 22°C Cool High
-                        logger.info(f"[Auto AI] Headcount > {HEADCOUNT_PANEL_ONLY_MAX} ({self.headcount} occupants detected) -> Turning ON ALL Light Bulbs (AZIOT Nodes 1-4). Setting AC to 22°C Cool High.")
-                        # Actuate single AZIOT 4 Node Smart Switch channels 1-4 for Light Bulbs
-                        self.tuya.set_relay_channel("A", 1, True) # S7 TV Area Bulbs
-                        self.tuya.set_relay_channel("A", 2, True) # S4 Upper Bulbs
-                        self.tuya.set_relay_channel("A", 3, True) # S2 Lower Bulbs
-                        self.tuya.set_relay_channel("A", 4, True) # S12 Far Bulbs
+                        # High occupancy (>3 occupants) -> Turn ON ALL light bulbs (S7, S4, S2, S12) & set AC to 22°C Cool High
+                        logger.info(f"[Auto AI] Headcount > {HEADCOUNT_PANEL_ONLY_MAX} ({self.headcount} occupants detected) -> Turning ON ALL Light Bulbs (S7, S4, S2, S12). Setting AC to 22°C Cool High.")
+                        self.tuya.set_relay_channel("A", 1, True)  # S7 TV Area Bulbs
+                        self.tuya.set_relay_channel("A", 2, True)  # S4 Upper Bulbs
+                        self.tuya.set_relay_channel("A", 3, True)  # S2 Lower Bulbs
+                        self.tuya.set_relay_channel("A", 4, True)  # S12 Far Bulbs
                         self.broadlink.send_ac_command(22, power="ON", mode="COOL", fan="HIGH")
 
-                        # Reset Light Bulb drop timer and auto-off flag
+                        # Reset drop timer and auto-off flag
                         self.lb_drop_timestamp = None
                         self.lb_auto_off_done = False
                     else:
-                        # Moderate occupancy (1-3 occupants) -> Actuate Light Bulbs (AZIOT 4 Node Switch)
-                        logger.info(f"[Auto AI] Occupancy detected ({self.headcount} occupants) -> Actuating Light Bulbs on AZIOT 4 Node Switch (Nodes 1-4).")
-                        self.tuya.set_relay_channel("A", 1, True) # S7 TV Area Bulbs
-                        self.tuya.set_relay_channel("A", 2, True) # S4 Upper Bulbs
-                        self.tuya.set_relay_channel("A", 3, True) # S2 Lower Bulbs
-                        self.tuya.set_relay_channel("A", 4, True) # S12 Far Bulbs
+                        # Moderate occupancy (1-3 occupants) -> S4 & S12 stay ON
+                        self.tuya.set_relay_channel("A", 2, True)  # S4 Upper Bulbs ON
+                        self.tuya.set_relay_channel("A", 4, True)  # S12 Far Bulbs ON
                         self.broadlink.send_ac_command(24, power="ON", mode="COOL", fan="AUTO")
 
-                        # Reset Light Bulb drop timer and auto-off flag
-                        self.lb_drop_timestamp = None
+                        # Anti-Flicker Hysteresis: Hold extra bulbs (S7 & S2) ON for 3 seconds before turning OFF
+                        s7_s2_on = self.tuya.state_a[1] or self.tuya.state_a[3]
+                        if s7_s2_on:
+                            if self.lb_drop_timestamp is None:
+                                self.lb_drop_timestamp = current_time
+                            drop_duration = current_time - self.lb_drop_timestamp
+                            if drop_duration >= 3.0:
+                                logger.info(f"[Anti-Flicker AI] Moderate occupancy sustained for {drop_duration:.1f}s -> Turning OFF extra bulbs (S7 & S2).")
+                                self.tuya.set_relay_channel("A", 1, False) # S7 OFF
+                                self.tuya.set_relay_channel("A", 3, False) # S2 OFF
+                                self.lb_drop_timestamp = None
+                            else:
+                                logger.info(f"[Anti-Flicker AI] Headcount dropped to {self.headcount}. Holding extra bulbs (S7 & S2) ON for 3s anti-flicker delay ({3.0 - drop_duration:.1f}s remaining)...")
+                        else:
+                            self.lb_drop_timestamp = None
+
                         self.lb_auto_off_done = False
                 else:
                     # Headcount == 0 (Zero Occupancy)
