@@ -85,19 +85,19 @@ SPATIAL_ZONES = {
     "Zone_1_Upper": {
         "name": "Upper Workstations & Lighting",
         "bbox": [0.05, 0.05, 0.45, 0.45], # [x_min, y_min, x_max, y_max] normalized
-        "relays": [("A", 1), ("A", 4)],     # LP1, LP2, LB4, LB5, LB6
-        "switches": ["S3", "S4"]
+        "relays": [("A", 2)],              # S4 (Upper Bulbs LB4-LB6)
+        "switches": ["S4"]
     },
     "Zone_2_Lower": {
         "name": "Lower Workstations & Lighting",
         "bbox": [0.05, 0.55, 0.45, 0.95],
-        "relays": [("A", 2), ("B", 1)],     # LP3, LP4, LB7, LB8, LB9
-        "switches": ["S10", "S2"]
+        "relays": [("A", 3)],              # S2 (Lower Bulbs LB7-LB9)
+        "switches": ["S2"]
     },
     "Zone_3_TV_Far": {
         "name": "Lounge & TV Area",
         "bbox": [0.55, 0.20, 0.95, 0.85],
-        "relays": [("A", 3), ("B", 2)],     # LB1-LB3, LB10-LB12
+        "relays": [("A", 1), ("A", 4)],     # S7 (TV Bulbs LB1-LB3), S12 (Far Bulbs LB10-LB12)
         "switches": ["S7", "S12"]
     }
 }

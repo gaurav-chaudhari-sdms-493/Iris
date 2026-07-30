@@ -36,12 +36,12 @@ export default function Switchboard({ relays, tvState, onToggleSwitch }) {
 
   const getSwitchState = (swId) => {
     if (swId === 'S1') return tvState === 'ON';
-    if (swId === 'S3') return Boolean(relayA[1]);
-    if (swId === 'S10') return Boolean(relayA[2]);
-    if (swId === 'S7') return Boolean(relayA[3]);
-    if (swId === 'S4') return Boolean(relayA[4]);
-    if (swId === 'S2') return Boolean(relayB[1]);
-    if (swId === 'S12') return Boolean(relayB[2]);
+    if (swId === 'S7') return Boolean(relayA[1]);  // Node 1: TV Area Bulbs LB1-LB3 (S7)
+    if (swId === 'S4') return Boolean(relayA[2]);  // Node 2: Upper Bulbs LB4-LB6 (S4)
+    if (swId === 'S2') return Boolean(relayA[3]);  // Node 3: Lower Bulbs LB7-LB9 (S2)
+    if (swId === 'S12') return Boolean(relayA[4]); // Node 4: Far Bulbs LB10-LB12 (S12)
+    if (swId === 'S3') return false;               // LP1, LP2 (Software Mock)
+    if (swId === 'S10') return false;              // LP3, LP4 (Software Mock)
     return false;
   };
 

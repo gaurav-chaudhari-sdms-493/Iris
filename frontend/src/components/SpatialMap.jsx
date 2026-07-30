@@ -45,12 +45,12 @@ export default function SpatialMap({ zoneStates, relays, tvState, acState, syste
 
   // Switch circuit states
   const isS1On = tvState === 'ON';
-  const isS2On = Boolean(relayB[1]);  // LB7, LB8, LB9
-  const isS3On = Boolean(relayA[1]);  // LP1, LP2
-  const isS4On = Boolean(relayA[4]);  // LB4, LB5, LB6
-  const isS7On = Boolean(relayA[3]);  // LB1, LB2, LB3
-  const isS10On = Boolean(relayA[2]); // LP3, LP4
-  const isS12On = Boolean(relayB[2]); // LB10, LB11, LB12
+  const isS7On = Boolean(relayA[1]);  // Node 1: LB1, LB2, LB3 (S7)
+  const isS4On = Boolean(relayA[2]);  // Node 2: LB4, LB5, LB6 (S4)
+  const isS2On = Boolean(relayA[3]);  // Node 3: LB7, LB8, LB9 (S2)
+  const isS12On = Boolean(relayA[4]); // Node 4: LB10, LB11, LB12 (S12)
+  const isS3On = false;               // LP1, LP2 (Software Mock)
+  const isS10On = false;              // LP3, LP4 (Software Mock)
 
   const isAcOn = (acState?.power ?? 'ON') === 'ON';
   const acTemp = acState?.temperature ?? 24;
