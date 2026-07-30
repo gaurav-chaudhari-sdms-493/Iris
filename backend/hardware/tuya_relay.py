@@ -136,14 +136,13 @@ class TuyaRelayManager:
             return False
 
         target_state = self.state_a if module == 'A' else self.state_b
-        target_state[channel] = state
-
         logger.info(f"[AZIOT Actuation] Module {module} Node {channel} -> {'ON' if state else 'OFF'} (Mock: {self.mock_mode})")
 
         if self.mock_mode or module == 'B':
+            target_state[channel] = state
             return True
 
-        dev_id = self.relay_a_cfg.get("dev_id", "d7dfa72170929e9eefvfx3")
+        dev_id = self.relay_a_cfg.get("dev_id", "")
         
         # 1. Try local TCP socket first if connected
         if self.relay_a and self.is_connected:
@@ -152,6 +151,7 @@ class TuyaRelayManager:
                 res = self.relay_a.set_status(state, switch=channel)
                 self.last_ping_ms = round((time.time() - start_t) * 1000, 1)
                 if res and "error" not in str(res).lower():
+                    target_state[channel] = state
                     logger.info(f"[AZIOT Local Response] Node {channel} set to {state}: {res}")
                     return True
             except Exception as e:
@@ -166,6 +166,7 @@ class TuyaRelayManager:
                 self.last_ping_ms = round((time.time() - start_t) * 1000, 1)
                 if res and res.get("success"):
                     self.is_connected = True
+                    target_state[channel] = state
                     logger.info(f"[AZIOT Cloud Response] Physical Node {channel} set to {state} via Cloud API!")
                     return True
                 else:

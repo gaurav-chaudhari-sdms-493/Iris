@@ -136,6 +136,14 @@ class IrisOrchestrator:
             self.latest_person_boxes = occ_res["boxes"]
             logger.info(f"[Project Iris] Current Headcount: {self.headcount}")
 
+            # Detect hardware connection recovery to restart 3-strike vacancy countdown
+            curr_connected = self.tuya.is_connected
+            if not getattr(self, "was_hardware_connected", True) and curr_connected:
+                logger.info("[IrisOrchestrator] Network reconnected. Restarting 3-strike vacancy timer...")
+                self.vacancy_start_timestamp = current_time
+                self.zero_occupancy_counter = 0
+            self.was_hardware_connected = curr_connected
+
             if self.system_mode == "AUTO":
                 if self.headcount > 0:
                     # Occupants present -> Reset zero vacancy tracking flags
@@ -182,13 +190,15 @@ class IrisOrchestrator:
                     logger.info(f"[Auto-Off AI] Zero Occupancy Duration: {vacancy_duration:.1f}s")
 
                     # RULE 1: Light Bulbs (LB) Auto-OFF after 3 seconds on AZIOT 4 Node Switch
-                    if vacancy_duration >= LB_AUTO_OFF_SEC and not self.lb_auto_off_done:
+                    any_bulbs_on = any(self.tuya.state_a[c] for c in [1, 2, 3, 4])
+                    if vacancy_duration >= LB_AUTO_OFF_SEC and (not self.lb_auto_off_done or any_bulbs_on):
                         logger.info(f"[Auto-Off AI] {LB_AUTO_OFF_SEC}s Vacancy -> Auto Turning OFF Light Bulbs on AZIOT Switch (Nodes 1, 2, 3, 4)...")
-                        self.tuya.set_relay_channel("A", 1, False) # S7 TV Area Bulbs
-                        self.tuya.set_relay_channel("A", 2, False) # S4 Upper Bulbs
-                        self.tuya.set_relay_channel("A", 3, False) # S2 Lower Bulbs
-                        self.tuya.set_relay_channel("A", 4, False) # S12 Far Bulbs
-                        self.lb_auto_off_done = True
+                        r1 = self.tuya.set_relay_channel("A", 1, False) # S7 TV Area Bulbs
+                        r2 = self.tuya.set_relay_channel("A", 2, False) # S4 Upper Bulbs
+                        r3 = self.tuya.set_relay_channel("A", 3, False) # S2 Lower Bulbs
+                        r4 = self.tuya.set_relay_channel("A", 4, False) # S12 Far Bulbs
+                        if (r1 and r2 and r3 and r4) or self.tuya.mock_mode or not any(self.tuya.state_a[c] for c in [1, 2, 3, 4]):
+                            self.lb_auto_off_done = True
 
                     # RULE 2: LED Panels (LP) Auto-OFF after 5 seconds
                     if vacancy_duration >= LP_AUTO_OFF_SEC and not self.lp_auto_off_done:
