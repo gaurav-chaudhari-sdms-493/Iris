@@ -71,10 +71,10 @@ export default function App() {
 
         if (socket.readyState === WebSocket.CONNECTING) {
           socket.onopen = () => {
-            try { socket.close(); } catch (e) {}
+            try { socket.close(); } catch (e) { }
           };
         } else {
-          try { socket.close(); } catch (e) {}
+          try { socket.close(); } catch (e) { }
         }
       }
     };
@@ -172,40 +172,40 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 w-full space-y-6">
-      
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-5 lg:p-8 w-full space-y-4 sm:space-y-6">
+
       {/* Compact Top Header Bar */}
-      <header className="iris-card flex flex-wrap items-center justify-between gap-3 py-2 px-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20">
-            <Eye className="w-5 h-5" />
+      <header className="iris-card flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-2.5 px-3.5 sm:px-5">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="p-2 rounded-xl bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 shrink-0">
+            <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
           <div>
-            <h1 className="text-base md:text-lg font-black tracking-tight text-slate-100 flex items-center gap-2">
+            <h1 className="text-sm sm:text-base md:text-lg font-black tracking-tight text-slate-100 flex items-center gap-2">
               PROJECT IRIS
             </h1>
-            <p className="text-[11px] text-slate-400 font-mono">Hybrid IoT & Computer Vision Office Automation System</p>
+            <p className="text-[10px] sm:text-[11px] text-slate-400 font-mono">Hybrid IoT & Computer Vision Office Automation System</p>
           </div>
         </div>
 
         {/* Daily Energy Savings Header Badge */}
-        <div className="flex items-center gap-3 bg-slate-900/90 border border-amber-500/30 px-3.5 py-1.5 rounded-xl shadow-md">
-          <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <TrendingDown className="w-4 h-4" />
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 bg-slate-900/90 border border-amber-500/30 px-3 sm:px-3.5 py-1.5 rounded-xl shadow-md max-w-full overflow-hidden">
+          <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+            <TrendingDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
             <div>
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Daily Energy Savings</span>
+              <span className="text-[9px] sm:text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Daily Energy Savings</span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-sm font-extrabold font-mono text-amber-400">{metrics.kwh_saved_today} kWh</span>
-                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                <span className="text-xs sm:text-sm font-extrabold font-mono text-amber-400">{metrics.kwh_saved_today} kWh</span>
+                <span className="text-[9px] sm:text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">
                   ${metrics.cost_saved_usd} Saved
                 </span>
               </div>
             </div>
-            <div className="h-6 w-[1px] bg-slate-800" />
-            <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <div className="hidden sm:block h-6 w-[1px] bg-slate-800" />
+            <div className="text-[10px] sm:text-[11px] text-slate-400 font-mono flex items-center gap-1">
+              <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
               <span>Load: {metrics.active_kw} kW</span>
             </div>
           </div>
@@ -213,9 +213,9 @@ export default function App() {
       </header>
 
       {/* PRIMARY FEATURE SECTION (TOP FOCUS): Side-by-Side Grid (Left: Overhead CCTV Stream | Right: 2D Ceiling Topology) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-        <LiveFeed 
-          telemetry={telemetry} 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch">
+        <LiveFeed
+          telemetry={telemetry}
           onSimulateHeadcount={handleSimulateHeadcount}
           onPlayerControl={handlePlayerControl}
         />
@@ -227,14 +227,15 @@ export default function App() {
           systemMode={telemetry?.system_mode}
           onToggleSwitch={handleToggleSwitch}
           onSetMode={handleSetMode}
+          onAcChange={handleAcChange}
         />
       </div>
 
       {/* SECONDARY SECTION: AC Remote, Event Console & Physical Switchboard Overrides */}
-      <Telemetry 
-        telemetry={telemetry} 
-        onAcChange={handleAcChange} 
-        onToggleSwitch={handleToggleSwitch} 
+      <Telemetry
+        telemetry={telemetry}
+        onAcChange={handleAcChange}
+        onToggleSwitch={handleToggleSwitch}
       />
 
       {/* Footer */}

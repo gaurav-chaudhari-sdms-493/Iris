@@ -183,16 +183,20 @@ export default function LiveFeed({ telemetry, onSimulateHeadcount, onPlayerContr
           isFullscreen ? 'flex-1 h-full relative' : ''
         }`}>
           
-          {/* Top: Video Stream Canvas */}
-          <div className={`relative flex items-center justify-center bg-slate-950 select-none ${
-            isFullscreen ? 'flex-1 w-full h-full' : 'aspect-video'
-          }`}>
+          {/* Top: Video Stream Canvas (Click to Stop / Resume) */}
+          <div 
+            onClick={() => onPlayerControl(isPaused ? 'play' : 'pause')}
+            className={`relative flex items-center justify-center bg-slate-950 select-none cursor-pointer group ${
+              isFullscreen ? 'flex-1 w-full h-full' : 'aspect-video'
+            }`}
+            title={isPaused ? "Click to Resume Video" : "Click to Stop Video"}
+          >
             {!streamError ? (
               <img
                 ref={imgRef}
                 src="/video_feed"
                 alt="Iris CCTV Stream"
-                className="w-full h-full object-contain select-none"
+                className="w-full h-full object-contain select-none pointer-events-none"
                 onError={() => setStreamError(true)}
               />
             ) : (
@@ -200,7 +204,10 @@ export default function LiveFeed({ telemetry, onSimulateHeadcount, onPlayerContr
                 <AlertCircle className="w-10 h-10 mx-auto mb-2 text-amber-400" />
                 <p className="text-sm font-semibold text-slate-200">Video Stream Standby</p>
                 <button
-                  onClick={() => setStreamError(false)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setStreamError(false);
+                  }}
                   className="mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-medium text-cyan-400 border border-slate-700 transition cursor-pointer"
                 >
                   Retry Connection
@@ -226,7 +233,6 @@ export default function LiveFeed({ telemetry, onSimulateHeadcount, onPlayerContr
             {/* Centered Play Button Overlay when Paused */}
             {isPaused && (
               <div 
-                onClick={() => onPlayerControl('play')}
                 className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-[2px] cursor-pointer transition"
               >
                 <div className="p-4 rounded-full bg-cyan-500/90 text-slate-950 shadow-xl shadow-cyan-500/20 hover:scale-110 transition flex items-center justify-center">

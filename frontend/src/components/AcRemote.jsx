@@ -45,7 +45,7 @@ export default function AcRemote({ telemetry, onAcChange }) {
       </div>
 
       {/* Thermostat Digital Display Box */}
-      <div className="bg-slate-950/90 border-2 border-cyan-500/40 rounded-2xl p-4 md:p-5 relative shadow-[0_0_25px_rgba(6,182,212,0.15)] flex flex-col justify-between space-y-4">
+      <div className="bg-slate-950/90 border-2 border-cyan-500/40 rounded-2xl p-3 sm:p-4 md:p-5 relative shadow-[0_0_25px_rgba(6,182,212,0.15)] flex flex-col justify-between space-y-3 sm:space-y-4">
         {!acState ? (
           <div className="text-center py-6 text-slate-500 font-mono text-xs animate-pulse">
             Connecting to AC Engine Telemetry...
@@ -53,22 +53,21 @@ export default function AcRemote({ telemetry, onAcChange }) {
         ) : (
           <>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-mono tracking-widest text-cyan-400 font-extrabold">CLIMATE IR</span>
-              <div className={`w-3 h-3 rounded-full transition-all ${
-                acState.power === 'ON' ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]' : 'bg-red-500/50'
-              }`} />
+              <span className="text-[10px] sm:text-xs font-mono tracking-widest text-cyan-400 font-extrabold">CLIMATE IR</span>
+              <div className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full transition-all ${acState.power === 'ON' ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]' : 'bg-red-500/50'
+                }`} />
             </div>
 
-            <div className="flex items-center justify-between px-2 md:px-6 py-2">
-              <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">
-                <Snowflake className="w-10 h-10 md:w-12 md:h-12" />
+            <div className="flex items-center justify-between px-1 sm:px-2 md:px-6 py-2">
+              <div className="p-2 sm:p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">
+                <Snowflake className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12" />
               </div>
-              <div className="text-4xl md:text-6xl font-black text-cyan-400 drop-shadow-[0_0_20px_rgba(6,182,212,0.6)] font-mono">
+              <div className="text-3xl sm:text-4xl md:text-6xl font-black text-cyan-400 drop-shadow-[0_0_20px_rgba(6,182,212,0.6)] font-mono">
                 {acState.power === 'ON' ? `${acState.temperature}°C` : 'OFF'}
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-xs font-mono text-slate-400 border-t border-slate-800/80 pt-3">
+            <div className="flex items-center justify-between text-[11px] sm:text-xs font-mono text-slate-400 border-t border-slate-800/80 pt-3">
               <span>{acState.mode} MODE</span>
               <span>FAN: {acState.fan_speed}</span>
             </div>
@@ -77,18 +76,17 @@ export default function AcRemote({ telemetry, onAcChange }) {
       </div>
 
       {/* Control Buttons Row */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         {/* Power IR */}
         <button
           onClick={togglePower}
           disabled={!acState}
-          className={`px-4 py-2.5 rounded-xl font-black text-xs md:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-lg active:scale-95 ${
-            acState?.power === 'ON' 
-              ? 'bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white shadow-red-500/20' 
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
-          }`}
+          className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-black text-xs md:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-lg active:scale-95 ${acState?.power === 'ON'
+            ? 'bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white shadow-red-500/20'
+            : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+            }`}
         >
-          <Plug className="w-4 h-4" />
+          <Plug className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           <span>POWER IR</span>
         </button>
 
@@ -96,7 +94,7 @@ export default function AcRemote({ telemetry, onAcChange }) {
         <button
           onClick={() => handleTempChange(1)}
           disabled={!acState}
-          className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-black flex items-center justify-center border border-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-black flex items-center justify-center border border-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
           title="Temperature Up"
         >
           <ChevronUp className="w-5 h-5" />
@@ -106,28 +104,28 @@ export default function AcRemote({ telemetry, onAcChange }) {
         <button
           onClick={() => handleTempChange(-1)}
           disabled={!acState}
-          className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-black flex items-center justify-center border border-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-black flex items-center justify-center border border-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
           title="Temperature Down"
         >
           <ChevronDown className="w-5 h-5" />
         </button>
 
-        {/* MODE */}
+        {/* Mode Selector */}
         <button
           onClick={cycleMode}
           disabled={!acState}
-          className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold text-xs md:text-sm border border-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
+          className="px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
         >
-          MODE
+          MODE: {acState?.mode ?? 'COOL'}
         </button>
 
-        {/* FAN SPEED */}
+        {/* Fan Selector */}
         <button
           onClick={cycleFan}
           disabled={!acState}
-          className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold text-xs md:text-sm border border-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
+          className="px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
         >
-          FAN SPEED
+          FAN: {acState?.fan_speed ?? 'AUTO'}
         </button>
       </div>
     </div>
