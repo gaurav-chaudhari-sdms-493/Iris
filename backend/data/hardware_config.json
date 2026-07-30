@@ -1,0 +1,23 @@
+{
+  "hardware_mock_mode": false,
+  "tuya_cloud": {
+    "api_key": "juugykgp344h8s4nvnk9",
+    "api_secret": "c2e9f98826c0425a9916f8c5ce4d53fd",
+    "project_code": "p1785402454511gmqxnc",
+    "api_region": "in"
+  },
+  "relay_a": {
+    "dev_id": "d7dfa72170929e9eefvfx3",
+    "address": "192.168.1.50",
+    "local_key": "vYNWVn3aP=EIvy)'",
+    "version": 3.3,
+    "description": "AZIOT 4 Node Smart Switch (Light Bulbs LB1-LB12)"
+  },
+  "relay_b": {
+    "dev_id": "AZIOT_RELAY_B_ID_67890",
+    "address": "192.168.1.51",
+    "local_key": "LOCAL_KEY_RELAY_B",
+    "version": 3.3,
+    "description": "Reserved for future expansion"
+  }
+}

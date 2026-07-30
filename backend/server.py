@@ -69,6 +69,18 @@ class PlayerControlRequest(BaseModel):
     action: str
     value: Optional[Any] = None
 
+class HardwareConfigRequest(BaseModel):
+    address: str
+    dev_id: str
+    local_key: str
+    version: Optional[float] = 3.3
+
+class HardwareModeRequest(BaseModel):
+    mock_mode: bool
+
+class HardwareTestRequest(BaseModel):
+    channel: int
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -180,6 +192,42 @@ async def control_player(req: PlayerControlRequest):
             except Exception:
                 pass
     return {"status": "success", "player_state": res}
+
+@app.get("/api/hardware/status")
+async def get_hardware_status():
+    """Returns detailed status breakdown for single AZIOT 4 Node Smart Switch."""
+    return orchestrator.tuya.get_status_details()
+
+@app.post("/api/hardware/config")
+async def update_hardware_config(req: HardwareConfigRequest):
+    """Updates connection credentials for single AZIOT 4 Node Smart Switch."""
+    success = orchestrator.tuya.update_credentials(
+        address=req.address,
+        dev_id=req.dev_id,
+        local_key=req.local_key,
+        version=req.version or 3.3
+    )
+    return {"status": "success" if success else "failed", "hardware": orchestrator.tuya.get_status_details()}
+
+@app.post("/api/hardware/mode")
+async def set_hardware_mode(req: HardwareModeRequest):
+    """Toggles system between Real Wi-Fi Hardware Control and Mock Mode."""
+    orchestrator.tuya.set_mock_mode(req.mock_mode)
+    return {"status": "success", "hardware": orchestrator.tuya.get_status_details()}
+
+@app.post("/api/hardware/test")
+async def test_hardware_channel(req: HardwareTestRequest):
+    """Pulse tests a specific node channel (1-4) on AZIOT Smart Switch (ON -> 1s -> OFF)."""
+    if req.channel not in [1, 2, 3, 4]:
+        raise HTTPException(status_code=400, detail="Channel must be 1, 2, 3, or 4.")
+    
+    # Pulse ON
+    orchestrator.tuya.set_relay_channel("A", req.channel, True)
+    await asyncio.sleep(1.0)
+    # Pulse OFF
+    orchestrator.tuya.set_relay_channel("A", req.channel, False)
+    
+    return {"status": "success", "tested_channel": req.channel}
 
 @app.get("/video_feed")
 async def video_feed():

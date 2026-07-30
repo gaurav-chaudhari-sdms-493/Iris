@@ -4,11 +4,13 @@ import SpatialMap from './components/SpatialMap';
 import Telemetry from './components/Telemetry';
 import Switchboard from './components/Switchboard';
 import SystemLog from './components/SystemLog';
-import { Eye, TrendingDown, Zap } from 'lucide-react';
+import HardwareConfigModal from './components/HardwareConfigModal';
+import { Eye, TrendingDown, Zap, Cpu, Wifi } from 'lucide-react';
 
 export default function App() {
   const [telemetry, setTelemetry] = useState(null);
   const [wsConnected, setWsConnected] = useState(false);
+  const [isHwModalOpen, setIsHwModalOpen] = useState(false);
   const wsRef = useRef(null);
 
   const metrics = telemetry?.energy_metrics ?? { active_kw: 1.8, kwh_saved_today: 0.42, cost_saved_usd: 0.06 };
@@ -188,25 +190,36 @@ export default function App() {
           </div>
         </div>
 
-        {/* Daily Energy Savings Header Badge */}
-        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 bg-slate-900/90 border border-amber-500/30 px-3 sm:px-3.5 py-1.5 rounded-xl shadow-md max-w-full overflow-hidden">
-          <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
-            <TrendingDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          </div>
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-            <div>
-              <span className="text-[9px] sm:text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Daily Energy Savings</span>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xs sm:text-sm font-extrabold font-mono text-amber-400">{metrics.kwh_saved_today} kWh</span>
-                <span className="text-[9px] sm:text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                  ${metrics.cost_saved_usd} Saved
-                </span>
-              </div>
+        {/* Daily Energy Savings Header Badge & Hardware Setup */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <button
+            onClick={() => setIsHwModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-cyan-500/30 hover:border-cyan-400 text-xs font-mono text-cyan-300 hover:text-cyan-200 shadow-md transition-all"
+            title="Configure AZIOT 4 Node Smart Switch Wi-Fi"
+          >
+            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">AZIOT Switch</span>
+          </button>
+
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 bg-slate-900/90 border border-amber-500/30 px-3 sm:px-3.5 py-1.5 rounded-xl shadow-md max-w-full overflow-hidden">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+              <TrendingDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
-            <div className="hidden sm:block h-6 w-[1px] bg-slate-800" />
-            <div className="text-[10px] sm:text-[11px] text-slate-400 font-mono flex items-center gap-1">
-              <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
-              <span>Load: {metrics.active_kw} kW</span>
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+              <div>
+                <span className="text-[9px] sm:text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Daily Energy Savings</span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xs sm:text-sm font-extrabold font-mono text-amber-400">{metrics.kwh_saved_today} kWh</span>
+                  <span className="text-[9px] sm:text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                    ${metrics.cost_saved_usd} Saved
+                  </span>
+                </div>
+              </div>
+              <div className="hidden sm:block h-6 w-[1px] bg-slate-800" />
+              <div className="text-[10px] sm:text-[11px] text-slate-400 font-mono flex items-center gap-1">
+                <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
+                <span>Load: {metrics.active_kw} kW</span>
+              </div>
             </div>
           </div>
         </div>
@@ -236,6 +249,11 @@ export default function App() {
         telemetry={telemetry}
         onAcChange={handleAcChange}
         onToggleSwitch={handleToggleSwitch}
+      />
+
+      <HardwareConfigModal
+        isOpen={isHwModalOpen}
+        onClose={() => setIsHwModalOpen(false)}
       />
 
       {/* Footer */}

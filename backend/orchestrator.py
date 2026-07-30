@@ -149,42 +149,29 @@ class IrisOrchestrator:
 
                     if self.headcount > HEADCOUNT_PANEL_ONLY_MAX:
                         # High occupancy (>3 occupants) -> Turn ON ALL lights & set AC to 22°C Cool High
-                        logger.info(f"[Auto AI] Headcount > {HEADCOUNT_PANEL_ONLY_MAX} ({self.headcount} occupants detected) -> Turning ON ALL lights (Panels + Bulbs). Setting AC to 22°C Cool High.")
-                        # Turn ON all LED Panel relays (LP1-LP4)
-                        self.tuya.set_relay_channel("A", 1, True) # S3 Upper LED Panels
-                        self.tuya.set_relay_channel("A", 2, True) # S10 Lower LED Panels
-                        # Turn ON all Light Bulb relays (LB1-LB12)
-                        self.tuya.set_relay_channel("A", 3, True) # S7 TV Area Bulbs
-                        self.tuya.set_relay_channel("A", 4, True) # S4 Upper Bulbs
-                        self.tuya.set_relay_channel("B", 1, True) # S2 Lower Bulbs
-                        self.tuya.set_relay_channel("B", 2, True) # S12 Far Bulbs
+                        logger.info(f"[Auto AI] Headcount > {HEADCOUNT_PANEL_ONLY_MAX} ({self.headcount} occupants detected) -> Turning ON ALL Light Bulbs (AZIOT Nodes 1-4). Setting AC to 22°C Cool High.")
+                        # Actuate single AZIOT 4 Node Smart Switch channels 1-4 for Light Bulbs
+                        self.tuya.set_relay_channel("A", 1, True) # S7 TV Area Bulbs
+                        self.tuya.set_relay_channel("A", 2, True) # S4 Upper Bulbs
+                        self.tuya.set_relay_channel("A", 3, True) # S2 Lower Bulbs
+                        self.tuya.set_relay_channel("A", 4, True) # S12 Far Bulbs
                         self.broadlink.send_ac_command(22, power="ON", mode="COOL", fan="HIGH")
 
                         # Reset Light Bulb drop timer and auto-off flag
                         self.lb_drop_timestamp = None
                         self.lb_auto_off_done = False
                     else:
-                        # Moderate occupancy (2-3 occupants) -> Ensure LED Panels are ON
-                        self.tuya.set_relay_channel("A", 1, True) # S3 Upper LED Panels
-                        self.tuya.set_relay_channel("A", 2, True) # S10 Lower LED Panels
+                        # Moderate occupancy (1-3 occupants) -> Actuate Light Bulbs (AZIOT 4 Node Switch)
+                        logger.info(f"[Auto AI] Occupancy detected ({self.headcount} occupants) -> Actuating Light Bulbs on AZIOT 4 Node Switch (Nodes 1-4).")
+                        self.tuya.set_relay_channel("A", 1, True) # S7 TV Area Bulbs
+                        self.tuya.set_relay_channel("A", 2, True) # S4 Upper Bulbs
+                        self.tuya.set_relay_channel("A", 3, True) # S2 Lower Bulbs
+                        self.tuya.set_relay_channel("A", 4, True) # S12 Far Bulbs
                         self.broadlink.send_ac_command(24, power="ON", mode="COOL", fan="AUTO")
 
-                        # Handle Light Bulbs with LB_AUTO_OFF_SEC timer buffer to prevent single-frame flickering
-                        if not self.lb_auto_off_done:
-                            if self.lb_drop_timestamp is None:
-                                self.lb_drop_timestamp = current_time
-
-                            drop_duration = current_time - self.lb_drop_timestamp
-                            logger.info(f"[Auto AI Buffer] Headcount <= {HEADCOUNT_PANEL_ONLY_MAX} ({self.headcount} occupants). Light Bulb off buffer: {drop_duration:.1f}s / {LB_AUTO_OFF_SEC}s")
-
-                            if drop_duration >= LB_AUTO_OFF_SEC:
-                                logger.info(f"[Auto AI] Buffer elapsed ({LB_AUTO_OFF_SEC}s). Turning OFF Light Bulbs (S7, S4, S2, S12)...")
-                                self.tuya.set_relay_channel("A", 3, False) # S7 TV Area Bulbs
-                                self.tuya.set_relay_channel("A", 4, False) # S4 Upper Bulbs
-                                self.tuya.set_relay_channel("B", 1, False) # S2 Lower Bulbs
-                                self.tuya.set_relay_channel("B", 2, False) # S12 Far Bulbs
-                                self.lb_auto_off_done = True
-                                self.lb_drop_timestamp = None
+                        # Reset Light Bulb drop timer and auto-off flag
+                        self.lb_drop_timestamp = None
+                        self.lb_auto_off_done = False
                 else:
                     # Headcount == 0 (Zero Occupancy)
                     self.zero_occupancy_counter += 1
@@ -194,20 +181,18 @@ class IrisOrchestrator:
                     vacancy_duration = current_time - self.vacancy_start_timestamp
                     logger.info(f"[Auto-Off AI] Zero Occupancy Duration: {vacancy_duration:.1f}s")
 
-                    # RULE 1: Light Bulbs (LB) Auto-OFF after 3 seconds
+                    # RULE 1: Light Bulbs (LB) Auto-OFF after 3 seconds on AZIOT 4 Node Switch
                     if vacancy_duration >= LB_AUTO_OFF_SEC and not self.lb_auto_off_done:
-                        logger.info(f"[Auto-Off AI] {LB_AUTO_OFF_SEC}s Vacancy -> Auto Turning OFF Light Bulbs (S7, S4, S2, S12)...")
-                        self.tuya.set_relay_channel("A", 3, False) # S7 TV Area Bulbs
-                        self.tuya.set_relay_channel("A", 4, False) # S4 Upper Bulbs
-                        self.tuya.set_relay_channel("B", 1, False) # S2 Lower Bulbs
-                        self.tuya.set_relay_channel("B", 2, False) # S12 Far Bulbs
+                        logger.info(f"[Auto-Off AI] {LB_AUTO_OFF_SEC}s Vacancy -> Auto Turning OFF Light Bulbs on AZIOT Switch (Nodes 1, 2, 3, 4)...")
+                        self.tuya.set_relay_channel("A", 1, False) # S7 TV Area Bulbs
+                        self.tuya.set_relay_channel("A", 2, False) # S4 Upper Bulbs
+                        self.tuya.set_relay_channel("A", 3, False) # S2 Lower Bulbs
+                        self.tuya.set_relay_channel("A", 4, False) # S12 Far Bulbs
                         self.lb_auto_off_done = True
 
                     # RULE 2: LED Panels (LP) Auto-OFF after 5 seconds
                     if vacancy_duration >= LP_AUTO_OFF_SEC and not self.lp_auto_off_done:
-                        logger.info(f"[Auto-Off AI] {LP_AUTO_OFF_SEC}s Vacancy -> Auto Turning OFF LED Panels (S3, S10)...")
-                        self.tuya.set_relay_channel("A", 1, False) # S3 Upper LED Panels
-                        self.tuya.set_relay_channel("A", 2, False) # S10 Lower LED Panels
+                        logger.info(f"[Auto-Off AI] {LP_AUTO_OFF_SEC}s Vacancy -> Auto Turning OFF LED Panels...")
                         self.lp_auto_off_done = True
 
                     # RULE 3: Air Conditioner (AC) Auto-OFF after 10 Minutes (600 seconds)
