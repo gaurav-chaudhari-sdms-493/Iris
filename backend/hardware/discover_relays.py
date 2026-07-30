@@ -24,8 +24,8 @@ def fetch_tuya_cloud_devices():
 
     hw_cfg = load_hardware_config()
     cloud_cfg = hw_cfg.get("tuya_cloud", {})
-    api_key = cloud_cfg.get("api_key", "juugykgp344h8s4nvnk9")
-    api_secret = cloud_cfg.get("api_secret", "c2e9f98826c0425a9916f8c5ce4d53fd")
+    api_key = cloud_cfg.get("api_key", "")
+    api_secret = cloud_cfg.get("api_secret", "")
     region = cloud_cfg.get("api_region", "in")
 
     logger.info(f"Querying Tuya Cloud API (Region: {region})...")

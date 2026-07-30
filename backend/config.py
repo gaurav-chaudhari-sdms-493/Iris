@@ -6,34 +6,91 @@ FSD Hardware & Spatial Mapping Settings
 import os
 import json
 
+def load_dotenv_file():
+    """Loads environment variables from .env file into os.environ."""
+    env_paths = [
+        os.path.join(os.path.dirname(__file__), ".env"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+    ]
+    for env_path in env_paths:
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip("'\"")
+                            os.environ[k] = v
+            except Exception:
+                pass
+
+def update_env_variable(key: str, value: str):
+    """Updates or appends a key=value pair in the .env file."""
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    os.environ[key] = str(value)
+    if not os.path.exists(env_path):
+        env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+    
+    if os.path.exists(env_path):
+        try:
+            lines = []
+            found = False
+            with open(env_path, "r") as f:
+                for line in f:
+                    if line.strip() and not line.startswith("#") and "=" in line:
+                        k, _ = line.split("=", 1)
+                        if k.strip() == key:
+                            lines.append(f"{key}={value}\n")
+                            found = True
+                            continue
+                    lines.append(line)
+            if not found:
+                lines.append(f"{key}={value}\n")
+            with open(env_path, "w") as f:
+                f.writelines(lines)
+        except Exception:
+            pass
+
+load_dotenv_file()
+
 # RTSP / Video Source
-# Default RTSP URL or synthetic video mode
 RTSP_URL = os.environ.get("IRIS_RTSP_URL", "rtsp://admin:password@192.168.1.100:554/stream1")
 VIDEO_PATH = os.environ.get("IRIS_VIDEO_PATH", "data/office/VIDEO-2026-07-28-15-36-24.mp4")
 USE_SIMULATED_STREAM = os.environ.get("IRIS_SIMULATED", "true").lower() == "true"
 YOLO_MODEL_PATH = os.environ.get("IRIS_YOLO_MODEL", "models/best.pt")
 
-# Hardware Direct Access Mode (Set to False to use physical devices)
-HARDWARE_MOCK_MODE = os.environ.get("IRIS_HARDWARE_MOCK", "true").lower() == "true"
+# Hardware Direct Access Mode
+HARDWARE_MOCK_MODE = os.environ.get("IRIS_HARDWARE_MOCK", "false").lower() == "true"
+
+# Tuya Cloud API Credentials
+TUYA_CLOUD_CONFIG = {
+    "api_key": os.environ.get("TUYA_API_KEY", ""),
+    "api_secret": os.environ.get("TUYA_API_SECRET", ""),
+    "project_code": os.environ.get("TUYA_PROJECT_CODE", ""),
+    "api_region": os.environ.get("TUYA_API_REGION", "in")
+}
 
 HARDWARE_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "data", "hardware_config.json")
 
 def load_hardware_config():
-    """Loads physical hardware config from JSON file or environment variables."""
+    """Loads physical hardware config from .env and JSON file."""
     default_config = {
         "hardware_mock_mode": HARDWARE_MOCK_MODE,
+        "tuya_cloud": TUYA_CLOUD_CONFIG,
         "relay_a": {
-            "dev_id": os.environ.get("RELAY_A_ID", "AZIOT_RELAY_A_ID_12345"),
-            "address": os.environ.get("RELAY_A_IP", "192.168.1.50"),
-            "local_key": os.environ.get("RELAY_A_KEY", "LOCAL_KEY_RELAY_A"),
-            "version": 3.3,
+            "dev_id": os.environ.get("RELAY_A_ID", ""),
+            "address": os.environ.get("RELAY_A_IP", "192.168.30.125"),
+            "local_key": os.environ.get("RELAY_A_KEY", ""),
+            "version": float(os.environ.get("RELAY_A_VERSION", 3.3)),
             "description": "AZIOT 4 Node Smart Switch (Light Bulbs LB1-LB12)"
         },
         "relay_b": {
-            "dev_id": os.environ.get("RELAY_B_ID", "AZIOT_RELAY_B_ID_67890"),
+            "dev_id": os.environ.get("RELAY_B_ID", ""),
             "address": os.environ.get("RELAY_B_IP", "192.168.1.51"),
-            "local_key": os.environ.get("RELAY_B_KEY", "LOCAL_KEY_RELAY_B"),
-            "version": 3.3,
+            "local_key": os.environ.get("RELAY_B_KEY", ""),
+            "version": float(os.environ.get("RELAY_B_VERSION", 3.3)),
             "description": "Reserved for future expansion"
         }
     }

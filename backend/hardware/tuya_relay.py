@@ -47,9 +47,13 @@ class TuyaRelayManager:
         """Initializes Tuya Cloud API client."""
         if not TINYTUYA_AVAILABLE:
             return
-        api_key = self.cloud_cfg.get("api_key", "juugykgp344h8s4nvnk9")
-        api_secret = self.cloud_cfg.get("api_secret", "c2e9f98826c0425a9916f8c5ce4d53fd")
+        api_key = self.cloud_cfg.get("api_key", "")
+        api_secret = self.cloud_cfg.get("api_secret", "")
         region = self.cloud_cfg.get("api_region", "in")
+        if not api_key or not api_secret:
+            logger.warning("[Tuya Cloud API] Missing API Key/Secret in .env file.")
+            self.cloud_device = None
+            return
         try:
             self.cloud_device = tinytuya.Cloud(apiRegion=region, apiKey=api_key, apiSecret=api_secret)
             logger.info("[Tuya Cloud API] Initialized successfully.")
@@ -63,9 +67,9 @@ class TuyaRelayManager:
             self.is_connected = False
             return False
 
-        ip = self.relay_a_cfg.get("address")
-        dev_id = self.relay_a_cfg.get("dev_id", "d7dfa72170929e9eefvfx3")
-        local_key = self.relay_a_cfg.get("local_key", "vYNWVn3aP=EIvy)'")
+        ip = self.relay_a_cfg.get("address", "")
+        dev_id = self.relay_a_cfg.get("dev_id", "")
+        local_key = self.relay_a_cfg.get("local_key", "")
         ver = float(self.relay_a_cfg.get("version", 3.3))
 
         try:
@@ -200,6 +204,7 @@ class TuyaRelayManager:
             return True
 
     def update_credentials(self, address: str, dev_id: str, local_key: str, version: float = 3.3):
+        from config import update_env_variable
         hw_cfg = load_hardware_config()
         self.relay_a_cfg = {
             "dev_id": dev_id.strip(),
@@ -210,6 +215,12 @@ class TuyaRelayManager:
         }
         hw_cfg["relay_a"] = self.relay_a_cfg
         save_hardware_config(hw_cfg)
+
+        # Persist dynamic IP & credentials directly to .env
+        update_env_variable("RELAY_A_IP", address.strip())
+        update_env_variable("RELAY_A_ID", dev_id.strip())
+        update_env_variable("RELAY_A_KEY", local_key.strip())
+        update_env_variable("RELAY_A_VERSION", str(version))
 
         if not self.mock_mode:
             return self._connect_device()
