@@ -246,149 +246,201 @@ export default function LiveFeed({ telemetry, onSimulateHeadcount, onPlayerContr
             )}
           </div>
 
-          {/* Bottom: Player Controls Bar (YouTube-Style overlay at bottom during Fullscreen) */}
-          <div className={`bg-slate-900/95 border-t border-slate-800/90 p-3 md:p-3.5 space-y-2.5 ${
+          {/* Bottom: Player Controls Bar */}
+          <div className={`bg-slate-900/95 border-t border-slate-800/90 p-3 md:p-3.5 ${
             isFullscreen ? 'absolute bottom-0 left-0 right-0 z-40 bg-slate-950/90 backdrop-blur-md' : ''
           }`}>
-            
-            <div className="flex items-center justify-end pb-1">
-              <button
-                onClick={() => onPlayerControl('live')}
-                title="Sync Live Stream"
-                className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1 border transition cursor-pointer ${
-                  isLive
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
-                }`}
-              >
-                <Radio className={`w-3 h-3 ${isLive ? 'text-emerald-400' : ''}`} />
-                <span>LIVE</span>
-              </button>
-            </div>
-
-            {/* 1. Progress Slider & Timestamp */}
-            <div className="space-y-1">
-              <div className="flex justify-between items-center text-xs font-mono">
-                <span className="text-cyan-400 font-bold">{formatTime(currentTime)}</span>
-                <span className="text-slate-400">{formatTime(duration)}</span>
-              </div>
-
-              <div className="relative flex items-center h-3.5 cursor-pointer group">
-                <div className="absolute inset-0 h-1.5 my-auto bg-slate-800 rounded-full overflow-hidden w-full">
-                  <div 
-                    className="h-full bg-cyan-500 transition-all duration-75"
-                    style={{ width: `${progressPercent}%` }}
-                  />
+            {isCctv ? (
+              /* DEDICATED LIVE CCTV CONTROL BAR */
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {/* Left: Stream Health Status */}
+                <div className="flex items-center gap-2">
+                  <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-mono font-bold flex items-center gap-1.5 shadow-sm">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span>LIVE HD STREAM</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+                    1280x720 • 15 FPS
+                  </span>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max={duration || 100}
-                  step="0.5"
-                  value={currentTime}
-                  onChange={(e) => onPlayerControl('seek', parseFloat(e.target.value))}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-              </div>
-            </div>
 
-            {/* 2. Control Toolbar (Play/Pause, Rewind, Forward, Step, Source, Speed, Utilities) */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
-              
-              {/* Left Actions */}
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => onPlayerControl(isPaused ? 'play' : 'pause')}
-                  title={isPaused ? "Play" : "Pause"}
-                  className={`p-1.5 rounded-lg border transition flex items-center justify-center cursor-pointer ${
-                    isPaused
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
-                      : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
-                  }`}
-                >
-                  {isPaused ? <Play className="w-4 h-4 fill-current ml-0.5" /> : <Pause className="w-4 h-4 fill-current" />}
-                </button>
+                {/* Right: Camera Selector, Snapshot & Fullscreen */}
+                <div className="flex items-center gap-2">
+                  {availableSources.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-mono text-slate-400 hidden md:inline">Camera:</span>
+                      <select
+                        value={activeSourceId}
+                        onChange={(e) => onPlayerControl('set_source', parseInt(e.target.value, 10))}
+                        title="Select Live Camera"
+                        className="bg-slate-800 text-cyan-300 text-xs font-mono px-2.5 py-1.5 rounded-xl border border-slate-700 focus:outline-none focus:border-cyan-500 max-w-[200px] truncate cursor-pointer shadow-sm"
+                      >
+                        {availableSources.map((src) => (
+                          <option key={src.id} value={src.id}>{src.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
-                <button
-                  onClick={() => onPlayerControl('seek_relative', -10)}
-                  title="Rewind 10s"
-                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition text-xs font-mono flex items-center gap-1 cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>-10s</span>
-                </button>
-
-                <button
-                  onClick={() => onPlayerControl('seek_relative', 10)}
-                  title="Forward 10s"
-                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition text-xs font-mono flex items-center gap-1 cursor-pointer"
-                >
-                  <RotateCw className="w-3.5 h-3.5" />
-                  <span>+10s</span>
-                </button>
-
-                <button
-                  onClick={() => onPlayerControl('step', -1)}
-                  title="Step 1 frame backward"
-                  className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/80 transition cursor-pointer"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
-                <button
-                  onClick={() => onPlayerControl('step', 1)}
-                  title="Step 1 frame forward"
-                  className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/80 transition cursor-pointer"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Right Selectors & Actions */}
-              <div className="flex items-center gap-2">
-                {availableSources.length > 0 && (
-                  <select
-                    value={activeSourceId}
-                    onChange={(e) => onPlayerControl('set_source', parseInt(e.target.value, 10))}
-                    title="Select Video Source"
-                    className="bg-slate-800 text-cyan-300 text-xs font-mono px-2 py-1 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-500 max-w-[120px] truncate cursor-pointer"
+                  <button
+                    onClick={handleTakeSnapshot}
+                    title="Take Snapshot (Save JPEG)"
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700/80 transition text-xs font-mono flex items-center gap-1.5 cursor-pointer shadow-sm"
                   >
-                    {availableSources.map((src) => (
-                      <option key={src.id} value={src.id}>{src.name}</option>
-                    ))}
-                  </select>
-                )}
+                    <Camera className="w-4 h-4 text-cyan-400" />
+                    <span className="hidden sm:inline">Snapshot</span>
+                  </button>
 
-                <select
-                  value={playbackSpeed}
-                  onChange={(e) => onPlayerControl('set_speed', parseFloat(e.target.value))}
-                  title="Playback Speed"
-                  className="bg-slate-800 text-slate-200 text-xs font-mono px-1.5 py-1 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-500 cursor-pointer"
-                >
-                  {[0.25, 0.5, 1.0, 1.5, 2.0].map((s) => (
-                    <option key={s} value={s}>{s}x</option>
-                  ))}
-                </select>
-
-                <button
-                  onClick={handleTakeSnapshot}
-                  title="Take Snapshot"
-                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer"
-                >
-                  <Camera className="w-3.5 h-3.5 text-cyan-400" />
-                </button>
-
-                <button
-                  onClick={toggleFullscreen}
-                  title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Mode"}
-                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer"
-                >
-                  {isFullscreen ? <Minimize className="w-3.5 h-3.5 text-amber-400" /> : <Maximize className="w-3.5 h-3.5" />}
-                </button>
+                  <button
+                    onClick={toggleFullscreen}
+                    title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Mode"}
+                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer shadow-sm"
+                  >
+                    {isFullscreen ? <Minimize className="w-4 h-4 text-amber-400" /> : <Maximize className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
+            ) : (
+              /* RECORDED VIDEO PLAYER CONTROLS (MP4 Files Only) */
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-end pb-1">
+                  <button
+                    onClick={() => onPlayerControl('live')}
+                    title="Sync Live Stream"
+                    className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1 border transition cursor-pointer ${
+                      isLive
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    <Radio className={`w-3 h-3 ${isLive ? 'text-emerald-400' : ''}`} />
+                    <span>LIVE</span>
+                  </button>
+                </div>
 
-            </div>
+                {/* Progress Slider & Timestamp */}
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center text-xs font-mono">
+                    <span className="text-cyan-400 font-bold">{formatTime(currentTime)}</span>
+                    <span className="text-slate-400">{formatTime(duration)}</span>
+                  </div>
 
+                  <div className="relative flex items-center h-3.5 cursor-pointer group">
+                    <div className="absolute inset-0 h-1.5 my-auto bg-slate-800 rounded-full overflow-hidden w-full">
+                      <div 
+                        className="h-full bg-cyan-500 transition-all duration-75"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max={duration || 100}
+                      step="0.5"
+                      value={currentTime}
+                      onChange={(e) => onPlayerControl('seek', parseFloat(e.target.value))}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* Control Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => onPlayerControl(isPaused ? 'play' : 'pause')}
+                      title={isPaused ? "Play" : "Pause"}
+                      className={`p-1.5 rounded-lg border transition flex items-center justify-center cursor-pointer ${
+                        isPaused
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                          : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
+                      }`}
+                    >
+                      {isPaused ? <Play className="w-4 h-4 fill-current ml-0.5" /> : <Pause className="w-4 h-4 fill-current" />}
+                    </button>
+
+                    <button
+                      onClick={() => onPlayerControl('seek_relative', -10)}
+                      title="Rewind 10s"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition text-xs font-mono flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>-10s</span>
+                    </button>
+
+                    <button
+                      onClick={() => onPlayerControl('seek_relative', 10)}
+                      title="Forward 10s"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition text-xs font-mono flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>+10s</span>
+                    </button>
+
+                    <button
+                      onClick={() => onPlayerControl('step', -1)}
+                      title="Step 1 frame backward"
+                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/80 transition cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => onPlayerControl('step', 1)}
+                      title="Step 1 frame forward"
+                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/80 transition cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {availableSources.length > 0 && (
+                      <select
+                        value={activeSourceId}
+                        onChange={(e) => onPlayerControl('set_source', parseInt(e.target.value, 10))}
+                        title="Select Video Source"
+                        className="bg-slate-800 text-cyan-300 text-xs font-mono px-2 py-1 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-500 max-w-[120px] truncate cursor-pointer"
+                      >
+                        {availableSources.map((src) => (
+                          <option key={src.id} value={src.id}>{src.name}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    <select
+                      value={playbackSpeed}
+                      onChange={(e) => onPlayerControl('set_speed', parseFloat(e.target.value))}
+                      title="Playback Speed"
+                      className="bg-slate-800 text-slate-200 text-xs font-mono px-1.5 py-1 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-500 cursor-pointer"
+                    >
+                      {[0.25, 0.5, 1.0, 1.5, 2.0].map((s) => (
+                        <option key={s} value={s}>{s}x</option>
+                      ))}
+                    </select>
+
+                    <button
+                      onClick={handleTakeSnapshot}
+                      title="Take Snapshot"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-cyan-400" />
+                    </button>
+
+                    <button
+                      onClick={toggleFullscreen}
+                      title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Mode"}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition cursor-pointer"
+                    >
+                      {isFullscreen ? <Minimize className="w-3.5 h-3.5 text-amber-400" /> : <Maximize className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
         </div>
