@@ -12,7 +12,7 @@ from config import (
     SPATIAL_ZONES, SWITCH_MAPPINGS, OCCUPANCY_POLL_INTERVAL_SEC,
     LB_AUTO_OFF_SEC, LP_AUTO_OFF_SEC, AC_AUTO_OFF_SEC,
     BASE_KWH_RATE, FULL_LOAD_POWER_KW, IDLE_LOAD_POWER_KW,
-    USE_SIMULATED_STREAM
+    USE_SIMULATED_STREAM, HEADCOUNT_PANEL_ONLY_MAX
 )
 from hardware import TuyaRelayManager, BroadlinkIRManager
 from vision import FastMotionEngine, OccupancyEngine, SyntheticStreamGenerator
@@ -37,6 +37,7 @@ class IrisOrchestrator:
 
         # Device Auto-Off Vacancy Tracking
         self.vacancy_start_timestamp = time.time()
+        self.lb_drop_timestamp = None
         self.lb_auto_off_done = True
         self.lp_auto_off_done = True
         self.ac_auto_off_done = True
@@ -137,41 +138,53 @@ class IrisOrchestrator:
 
             if self.system_mode == "AUTO":
                 if self.headcount > 0:
-                    # Occupants present -> re-energize all devices if previously shut off
-                    was_vacant = (self.vacancy_start_timestamp is not None) or self.lb_auto_off_done or self.lp_auto_off_done or self.ac_auto_off_done
-                    
-                    if was_vacant:
-                        logger.info(f"[Auto-On AI] Person(s) re-detected (Headcount: {self.headcount}). Auto-starting all light circuits & AC!")
+                    # Occupants present -> Reset zero vacancy tracking flags
+                    self.vacancy_start_timestamp = None
+                    self.zero_occupancy_counter = 0
+                    self.lp_auto_off_done = False
+                    self.ac_auto_off_done = False
+
+                    # Turn ON TV Power
+                    self.broadlink.toggle_tv_power("ON")
+
+                    if self.headcount > HEADCOUNT_PANEL_ONLY_MAX:
+                        # High occupancy (>3 occupants) -> Turn ON ALL lights & set AC to 22°C Cool High
+                        logger.info(f"[Auto AI] Headcount > {HEADCOUNT_PANEL_ONLY_MAX} ({self.headcount} occupants detected) -> Turning ON ALL lights (Panels + Bulbs). Setting AC to 22°C Cool High.")
+                        # Turn ON all LED Panel relays (LP1-LP4)
+                        self.tuya.set_relay_channel("A", 1, True) # S3 Upper LED Panels
+                        self.tuya.set_relay_channel("A", 2, True) # S10 Lower LED Panels
                         # Turn ON all Light Bulb relays (LB1-LB12)
                         self.tuya.set_relay_channel("A", 3, True) # S7 TV Area Bulbs
                         self.tuya.set_relay_channel("A", 4, True) # S4 Upper Bulbs
                         self.tuya.set_relay_channel("B", 1, True) # S2 Lower Bulbs
                         self.tuya.set_relay_channel("B", 2, True) # S12 Far Bulbs
-                        # Turn ON all LED Panel relays (LP1-LP4)
+                        self.broadlink.send_ac_command(22, power="ON", mode="COOL", fan="HIGH")
+
+                        # Reset Light Bulb drop timer and auto-off flag
+                        self.lb_drop_timestamp = None
+                        self.lb_auto_off_done = False
+                    else:
+                        # Moderate occupancy (2-3 occupants) -> Ensure LED Panels are ON
                         self.tuya.set_relay_channel("A", 1, True) # S3 Upper LED Panels
                         self.tuya.set_relay_channel("A", 2, True) # S10 Lower LED Panels
-                        # Turn ON TV Power
-                        self.broadlink.toggle_tv_power("ON")
-
-                    # Reset vacancy tracking flags
-                    self.vacancy_start_timestamp = None
-                    self.zero_occupancy_counter = 0
-                    self.lb_auto_off_done = False
-                    self.lp_auto_off_done = False
-                    self.ac_auto_off_done = False
-                    
-                    # Ensure spatial zone state tracking reflects powered lights
-                    for z_id in SPATIAL_ZONES:
-                        self.zone_states[z_id] = True
-
-                    if self.headcount >= 4:
-                        # High occupancy -> Lower AC Temp to 22°C (High Fan)
-                        logger.info("High Occupancy (>=4). Setting AC to 22°C Cool High.")
-                        self.broadlink.send_ac_command(22, power="ON", mode="COOL", fan="HIGH")
-                    else:
-                        # Standard occupancy -> 24°C Cool Auto
-                        logger.info("Standard Occupancy (<4). Setting AC to 24°C Cool Auto.")
                         self.broadlink.send_ac_command(24, power="ON", mode="COOL", fan="AUTO")
+
+                        # Handle Light Bulbs with LB_AUTO_OFF_SEC timer buffer to prevent single-frame flickering
+                        if not self.lb_auto_off_done:
+                            if self.lb_drop_timestamp is None:
+                                self.lb_drop_timestamp = current_time
+
+                            drop_duration = current_time - self.lb_drop_timestamp
+                            logger.info(f"[Auto AI Buffer] Headcount <= {HEADCOUNT_PANEL_ONLY_MAX} ({self.headcount} occupants). Light Bulb off buffer: {drop_duration:.1f}s / {LB_AUTO_OFF_SEC}s")
+
+                            if drop_duration >= LB_AUTO_OFF_SEC:
+                                logger.info(f"[Auto AI] Buffer elapsed ({LB_AUTO_OFF_SEC}s). Turning OFF Light Bulbs (S7, S4, S2, S12)...")
+                                self.tuya.set_relay_channel("A", 3, False) # S7 TV Area Bulbs
+                                self.tuya.set_relay_channel("A", 4, False) # S4 Upper Bulbs
+                                self.tuya.set_relay_channel("B", 1, False) # S2 Lower Bulbs
+                                self.tuya.set_relay_channel("B", 2, False) # S12 Far Bulbs
+                                self.lb_auto_off_done = True
+                                self.lb_drop_timestamp = None
                 else:
                     # Headcount == 0 (Zero Occupancy)
                     self.zero_occupancy_counter += 1
@@ -203,6 +216,13 @@ class IrisOrchestrator:
                         self.broadlink.send_ac_command(24, power="OFF")
                         self.broadlink.toggle_tv_power("OFF")
                         self.ac_auto_off_done = True
+
+                # Synchronize spatial zone states dynamically based on active relay channels
+                relays_state = self.tuya.get_state()
+                for z_id, z_data in SPATIAL_ZONES.items():
+                    self.zone_states[z_id] = any(
+                        relays_state[f"Relay_{m}"][c] for m, c in z_data["relays"]
+                    )
 
             self.last_ai_check = current_time
 

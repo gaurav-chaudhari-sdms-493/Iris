@@ -82,6 +82,9 @@ SPATIAL_ZONES = {
 FAST_MOTION_FPS = 5
 OCCUPANCY_POLL_INTERVAL_SEC = 1
 
+# Headcount Lighting Thresholds
+HEADCOUNT_PANEL_ONLY_MAX = 3  # Headcount 1-3 -> LED Panels Only; >3 -> All Lights ON
+
 # Device Auto-Off Vacancy Timers (FSD Section 7.2)
 LB_AUTO_OFF_SEC = 3      # 3 seconds for Light Bulbs (LB)
 LP_AUTO_OFF_SEC = 5      # 5 seconds for LED Panels (LP)
@@ -90,3 +93,4 @@ AC_AUTO_OFF_SEC = 600    # 10 Minutes (600 seconds) for Air Conditioner (AC)
 BASE_KWH_RATE = 0.15          # $0.15 / kWh
 FULL_LOAD_POWER_KW = 1.8      # Lights + AC peak load in kW
 IDLE_LOAD_POWER_KW = 0.15     # Standby power in kW
+
