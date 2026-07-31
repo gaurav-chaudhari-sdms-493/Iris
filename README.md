@@ -1,28 +1,55 @@
 # Project Iris 👁️⚡
+
 > **Commercial Office Automation & AI Vision Telemetry Dashboard**  
 > *Real-time occupancy tracking, 2D spatial floorplan mapping, physical 12-gang switchboard control, and smart HVAC energy optimization powered by YOLOv8, FastAPI, and React.*
 
 ---
 
+## 📌 Document Metadata
+- **Project Version**: `v1.0.0`
+- **Document Version**: `1.0.0`
+- **Last Updated**: `2026-07-31`
+- **Status**: `Operational / Production Ready`
+- **Classification**: `STARK AI Internal & Proprietary`
+
+---
+
 ## 🌟 Overview
 
-**Project Iris** is an intelligent, high-efficiency commercial office automation system designed for STARK AI office spaces. It combines computer vision occupancy tracking with automated physical relay switching and IR climate control.
+**Project Iris** is an intelligent, high-efficiency commercial office automation system designed exclusively for STARK AI commercial office spaces. It combines real-time computer vision occupancy tracking with automated physical relay switching and IR climate control.
 
-By replacing traditional static motion sensors with real-time **YOLOv8 person detection**, Project Iris achieves precision energy management:
+By replacing traditional static motion sensors with real-time **YOLOv8 person detection** and **OpenCV fast spatial motion analysis**, Project Iris achieves precision energy management:
 - **Instant Re-Energize**: Automatically turns ON spatial lights and AC when occupants enter the office.
-- **Rapid Energy Shutoff**: Automatically powers down all non-essential lights, AC, and TV when zero occupants are detected for 3 consecutive seconds.
-- **Dynamic Climate Adaptation**: Lowers AC target temperature to **22°C Cool High** during high occupancy ($\ge 4$ occupants) and maintains **24°C Cool Auto** during standard occupancy.
+- **Fine-Grained Vacancy Timers**: Automatically powers down Light Bulbs (3s), LED Panels (5s), and AC/TV (10 mins) when zero occupants are detected.
+- **Dynamic Climate Adaptation**: Adjusts AC target temperature to **22°C Cool High** during high occupancy ($\ge 4$ occupants) and maintains **24°C Cool Auto** during standard occupancy ($1\text{--}3$ occupants).
+- **Anti-Flicker Hysteresis**: Holds auxiliary bulbs for 3 seconds during headcount transitions to prevent light flashing.
+
+---
+
+## 📚 Repository Documentation Index
+
+| Document | Description |
+| :--- | :--- |
+| 📖 [Functional Spec Document](file:///home/stark/JetBrainsProjects/Iris/Docs/Project%20Iris.md) | Detailed FSD covering hardware architecture, vision engine, and orchestration rules |
+| 🏗️ [System Architecture](file:///home/stark/JetBrainsProjects/Iris/ARCHITECTURE.md) | Component architecture, data flow diagrams, and state machine specifications |
+| 🔌 [API & WebSockets Reference](file:///home/stark/JetBrainsProjects/Iris/Docs/API_REFERENCE.md) | Complete REST API endpoints and real-time WebSocket telemetry protocol |
+| ⚡ [AZIOT Relay Commands](file:///home/stark/JetBrainsProjects/Iris/Docs/AZIOT_RELAY_COMMANDS.md) | Direct `curl` command reference for testing physical switch channels |
+| 🚀 [Deployment & Ops Guide](file:///home/stark/JetBrainsProjects/Iris/DEPLOYMENT.md) | Hardware key extraction, Wi-Fi setup, environment configuration, systemd autostart |
+| 🧪 [Testing & Verification Guide](file:///home/stark/JetBrainsProjects/Iris/TESTING.md) | Hardware mock testing, API test suites, and CPU allocation benchmarks |
+| 🛡️ [Security Policy](file:///home/stark/JetBrainsProjects/Iris/SECURITY.md) | Internal vulnerability disclosure, IoT network isolation, secrets protection |
+| 🤝 [Internal Developer Guide](file:///home/stark/JetBrainsProjects/Iris/CONTRIBUTING.md) | Internal engineering guidelines, code style (PEP 8, Prettier), branch workflow |
+| 📜 [Changelog](file:///home/stark/JetBrainsProjects/Iris/CHANGELOG.md) | Full version release history and technical change tracking |
 
 ---
 
 ## 🚀 Key Features
 
-- 🎯 **1-Second Real-Time YOLOv8 Detection**: High-speed occupant headcount tracking and spatial zone assignment using lightweight PyTorch YOLOv8.
+- 🎯 **1-Second Real-Time YOLOv8 Detection**: High-speed occupant headcount tracking and spatial zone assignment using lightweight PyTorch YOLOv8 (`models/best.pt`).
 - 🗺️ **Interactive 2D Spatial Floorplan**: Custom top-view room visualization rendering active ceiling panel lights (LP1–LP4), track spotlight rails (LB1–LB12), AC cassette unit, TV display, and 12-gang physical switchboard state.
-- ⚡ **Physical 12-Gang Switchboard Integration**: Direct mapping between physical wall switches (S1–S12), Tuya Relay modules, and Broadlink IR commands.
-- ❄️ **Smart HVAC & TV Automation**: Automated Broadlink IR control adjusting climate output according to real-time headcount.
+- ⚡ **AZIOT 4 Node Smart Switch Integration**: Direct local TCP control of physical relay channels mapped to switchboard buttons (S7, S4, S2, S12).
+- ❄️ **Smart HVAC & TV IR Automation**: Broadlink RM4 Mini IR blaster adjusting climate output according to real-time headcount.
 - 📊 **Live Energy Metrics**: Real-time tracking of active load (kW), cumulative energy saved (kWh), and financial cost savings ($USD).
-- 🎬 **Custom MP4 Video Feed & RTSP Support**: Auto-detects local MP4 demo videos (`backend/video.mp4`) with continuous seamless looping or connects directly to live RTSP CCTV camera streams.
+- 🎬 **Custom MP4 & Live RTSP Feed**: Continuous looping demo feed generator (`backend/video.mp4` or synthetic frames) and live RTSP camera connection.
 
 ---
 
@@ -35,7 +62,7 @@ By replacing traditional static motion sensors with real-time **YOLOv8 person de
                                        │
                                        ▼
                        ┌────────────────────────────────┐
-                       │  YOLOv8 Computer Vision Engine │
+                       │  Fast Motion & YOLO Engine     │
                        │    (Headcount & Spatial BBoxes)│
                        └───────────────┬────────────────┘
                                        │
@@ -43,37 +70,32 @@ By replacing traditional static motion sensors with real-time **YOLOv8 person de
                        ┌────────────────────────────────┐
                        │  FastAPI Orchestration Engine  │
                        │    (5 FPS Telemetry Stream)    │
-                       └───────┬────────────────┬───────┘
+                       └───────┬────────────────────────┘
                                │                │
-             WebSocket / WS    │                │  Relay / IR Commands
+             WebSocket / MJPEG │                │ Local TCP / IR Commands
                                ▼                ▼
            ┌──────────────────────┐   ┌──────────────────────────┐
-           │ React 18 + Tailwind  │   │  Tuya Relays (Mod A & B) │
+           │ React 18 + Tailwind  │   │  AZIOT 4 Node Switch     │
            │ Dashboard (Vite 5)   │   │  Broadlink IR (AC & TV)  │
            └──────────────────────┘   └──────────────────────────┘
 ```
 
 ---
 
-## 🔌 Hardware & Wiring Specifications
+## 🔌 Hardware & Switch Mapping
 
-### Physical 12-Gang Switchboard Schematic (`S1` – `S12`)
+### Switchboard & AZIOT Channel Mapping
 
-| Switch ID | Target Load / Appliance | Controlled By / Relay Channel | Spatial Zone |
-| :--- | :--- | :--- | :--- |
-| **S1** | Wall TV Display | Broadlink IR Blaster | Zone 3 (TV & Lounge) |
-| **S2** | Track Spotlights `LB7`, `LB8`, `LB9` | Tuya Module B — Ch 1 | Zone 2 (Lower Desks) |
-| **S3** | LED Panels `LP1`, `LP2` | Tuya Module A — Ch 1 | Zone 1 & Zone 2 |
-| **S4** | Track Spotlights `LB4`, `LB5`, `LB6` | Tuya Module A — Ch 4 | Zone 1 (Upper Desks) |
-| **S5 – S6** | Spare Auxiliary Lines | Unassigned | Auxiliary |
-| **S7** | Track Spotlights `LB1`, `LB2`, `LB3` | Tuya Module A — Ch 3 | Zone 1 (Upper Desks) |
-| **S8 – S9** | Spare Auxiliary Lines | Unassigned | Auxiliary |
-| **S10** | LED Panels `LP3`, `LP4` | Tuya Module A — Ch 2 | Zone 3 & Zone 2 |
-| **S11** | Auxiliary Pass-through | Unassigned | Auxiliary |
-| **S12** | Track Spotlights `LB10`, `LB11`, `LB12` | Tuya Module B — Ch 2 | Zone 3 (TV & Lounge) |
-| **AC Unit** | Ceiling Cassette AC | Broadlink IR Blaster | Central HVAC |
-
-*Note: AC unit is continuously powered and controlled via IR commands.*
+| Physical Switch | Load Description | Module & Channel | Hardware Type | Default Spatial Zone |
+| :--- | :--- | :--- | :--- | :--- |
+| **S1** | Wall TV Display | Broadlink IR Blaster | IR Command | Zone 3 (TV & Lounge) |
+| **S7** | TV Area Bulbs `LB1`–`LB3` | AZIOT Module A — Ch 1 | Physical Relay | Zone 3 (TV & Lounge) |
+| **S4** | Upper Bulbs `LB4`–`LB6` | AZIOT Module A — Ch 2 | Physical Relay | Zone 1 (Upper Desks) |
+| **S2** | Lower Bulbs `LB7`–`LB9` | AZIOT Module A — Ch 3 | Physical Relay | Zone 2 (Lower Desks) |
+| **S12** | Far Bulbs `LB10`–`LB12` | AZIOT Module A — Ch 4 | Physical Relay | Zone 3 (Far Area) |
+| **S3** | Upper LED Panels `LP1`–`LP2` | Virtual Software Switch | Software Mock | Zone 1 & Zone 2 |
+| **S10** | Lower LED Panels `LP3`–`LP4` | Virtual Software Switch | Software Mock | Zone 2 & Zone 3 |
+| **AC Unit** | Ceiling Cassette AC | Broadlink IR Blaster | IR Command | Central HVAC |
 
 ---
 
@@ -81,84 +103,40 @@ By replacing traditional static motion sensors with real-time **YOLOv8 person de
 
 ### Prerequisites
 
-- **Python**: 3.10+ (with `venv` support)
+- **Python**: 3.10+
 - **Node.js**: v18+ (with `npm`)
-- **FFmpeg**: Required for OpenCV video stream decoding
+- **FFmpeg & OpenCV Dependencies**: Required for video decoding
 
-### 1. Clone the Repository
+### Quickstart
 
-```bash
-git clone https://github.com/your-username/Project-Iris.git
-cd Project-Iris
-```
-
-### 2. Environment Setup
-
-The backend virtual environment and frontend dependencies are managed automatically via the startup script. Alternatively, set up manually:
-
-#### Backend Setup:
-```bash
-cd backend
-python3 -m venv iris_env
-source iris_env/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-./iris_env/bin/pip install -r requirements.txt
-cd ..
-```
-
-#### Frontend Setup:
-```bash
-cd frontend
-npm install
-cd ..
-```
-
----
-
-## 🚦 Running Project Iris
-
-### Start All Services
-
-Use the automated start script to launch both the FastAPI backend (`http://localhost:8008`) and Vite React frontend (`http://localhost:5173`):
-
-```bash
-./start.sh
-```
-
-### Stop All Services
-
-To cleanly terminate all running background processes:
-
-```bash
-./stop.sh
-```
-
----
-
-## 📹 Using Custom MP4 Video Input
-
-To run Project Iris against your own office video feed:
-
-1. Place your video file at:
-   ```path
-   backend/video.mp4
+1. **Clone Internal Repository**:
+   ```bash
+   git clone git@github.com:stark-ai/Project-Iris.git
+   cd Project-Iris
    ```
-2. Start the system:
+
+2. **Start All Services**:
    ```bash
    ./start.sh
    ```
-3. Open `http://localhost:5173` in your browser. The system will detect `video.mp4`, stream it continuously in a loop, and execute live YOLOv8 headcount tracking.
+   *This automatically sets up Python virtual environments, installs frontend node modules, builds frontend assets, and starts the FastAPI server on `http://localhost:8008` (and Vite frontend on `http://localhost:5173`).*
+
+3. **Stop All Services**:
+   ```bash
+   ./stop.sh
+   ```
 
 ---
 
 ## 💻 Tech Stack
 
-- **Frontend**: React 18, Vite 5, Tailwind CSS v4, Lucide Icons, WebSockets
+- **Frontend**: React 18, Vite 5, Tailwind CSS v4, Lucide Icons, Recharts, WebSockets
 - **Backend**: Python 3, FastAPI, Uvicorn, AsyncIO, PyTorch, OpenCV
-- **AI & Computer Vision**: YOLOv8 (`yolov8n.pt`), Custom Contour Motion Engine
-- **Hardware Integration**: Tuya Open API (Relay Modules), Broadlink IR SDK
+- **AI & Vision**: YOLOv8 (`models/best.pt`), Custom OpenCV Motion Engine
+- **Hardware Protocol**: `tinytuya` (Local TCP for AZIOT Switches), `broadlink` (IR Blaster)
 
 ---
 
-## 📄 License
+## 📄 Licensing & Intellectual Property
 
-Distributed under the MIT License. See `LICENSE` for more information.
+**STARK AI Proprietary & Confidential**. All rights reserved. See `LICENSE` for formal notice.

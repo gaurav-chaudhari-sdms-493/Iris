@@ -1,205 +1,187 @@
-# **Project Iris \- Detailed Technical Implementation Guide (FSD)**
+# **Project Iris - Detailed Technical Implementation Guide (FSD)**
 
-## **1\. Executive Summary**
+---
 
-Traditional PIR motion sensors are inefficient for office environments—they fail to detect stationary employees at desks, cause lights to shut off unexpectedly, and cannot dynamically scale Air Conditioning based on room occupancy.  
-**Project Iris** is a hybrid IoT and Computer Vision automation engine designed for commercial office spaces. It utilizes an existing overhead CCTV camera feed to apply lightweight Computer Vision (CV) logic, delivering:
+## 📌 Document Metadata
+- **Project Version**: `v1.0.0`
+- **Document Version**: `1.0.0`
+- **Last Updated**: `2026-07-31`
+- **Status**: `Approved / Operational`
 
-> 1. **Instant-On Lighting (\<1 sec delay):** Triggered by fast, local pixel-difference detection.  
-> 2. **Dynamic AC Load Balancing & Presence State (30-sec polling):** Governed by YOLOv8 object detection snapshots to count occupants and manage HVAC state cleanly without rapid cycling.
+---
 
-## **2\. Hardware Architecture & Bill of Materials (BOM)**
+## **1. Executive Summary**
 
-> * **Vision Source:** Existing Ceiling Dome CCTV Camera (accessible via local IP/RTSP stream).  
-> * **Edge Compute:** Local Development Workstation (Intel i7, 32GB RAM, dedicated GPU) processing the RTSP stream in real-time.  
-> * **Lighting Control:** 2x **AZIOT 4-Node Smart Switches** (Tuya-compatible).  
-  * *Mounting Strategy:* Installed inside a standard plastic electrical junction box mounted in the false ceiling to bypass space constraints behind the 12-gang wall switchboard.  
-> * **AC & Media Control:** 1x **Broadlink RM4 Mini** IR Blaster (placed on a desk divider with clear line-of-sight to the Cassette AC and TV).
+Traditional PIR motion sensors are inefficient for commercial office environments—they fail to detect stationary employees at desks, cause lights to shut off unexpectedly, and cannot dynamically scale Air Conditioning based on occupant load.
 
-## **3\. Physical Wiring & Circuit Mapping**
+**Project Iris** is a hybrid IoT and Computer Vision automation engine designed for STARK AI commercial office spaces. It utilizes an overhead CCTV camera feed (or synthetic MP4 video input) combined with lightweight PyTorch YOLOv8 object detection and OpenCV fast spatial motion analysis:
 
-The system maps AI detection zones directly to the existing physical wall switches. The facility electrician wires the AZIOT relay channels in parallel with manual wall switches so physical manual overrides remain fully operational.
+> 1. **Instant Spatial Motion Lighting (<200 ms delay):** Triggered by fast pixel-difference contour detection across designated room bounding boxes.
+> 2. **Real-Time 1-Second YOLO Occupancy Engine:** Evaluates headcount snapshot frames to dynamically control lighting levels and AC setpoints.
+> 3. **Fine-Grained Auto-Off Timers:** Prevents wasted electricity by applying staggered vacancy shutoffs (Light Bulbs: 3s, LED Panels: 5s, AC/TV: 10 mins).
+> 4. **Anti-Flicker Hysteresis:** Retains auxiliary lighting rows for 3 seconds during headcount drops to ensure smooth visual transitions.
 
-> * **Switch S1 (TV):** Hardwired / Always powered. On/Off state is handled via Broadlink IR signals.  
-> * **AZIOT Relay Module A:**  
-  * **Channel 1** \\rightarrow Wires in parallel to **S3** (Controls Upper LED Panels LP1, LP2)  
-  * **Channel 2** \\rightarrow Wires in parallel to **S10** (Controls Lower LED Panels LP3, LP4)  
-  * **Channel 3** \\rightarrow Wires in parallel to **S7** (Controls TV Area Bulbs LB1, LB2, LB3)  
-  * **Channel 4** \\rightarrow Wires in parallel to **S4** (Controls Upper Bulbs LB4, LB5, LB6)  
-> * **AZIOT Relay Module B:**  
-  * **Channel 1** \\rightarrow Wires in parallel to **S2** (Controls Lower Bulbs LB7, LB8, LB9)  
-  * **Channel 2** \\rightarrow Wires in parallel to **S12** (Controls Far Bulbs LB10, LB11, LB12)  
-  * **Channels 3 & 4** \\rightarrow Unused / Spare.
+---
 
-## **4\. Environment & Dependencies Setup**
+## **2. Hardware Architecture & Bill of Materials (BOM)**
 
-Run all commands within an isolated Python virtual environment (Python 3.8+ required).  
-`# Create and activate virtual environment`  
-`python -m venv iris_env`
+- **Vision Source:** Existing Ceiling Dome CCTV Camera (accessible via local IP/RTSP stream) or local file (`backend/video.mp4`).
+- **Edge Compute:** Local Workstation (Intel i7 / multi-core CPU) allocated max 50% CPU thread utilization (`torch.set_num_threads`).
+- **Lighting Control:** **AZIOT 4 Node Smart Switch** (Tuya-compatible 4-relay module).
+  - *Mounting Strategy:* Installed inside standard junction box in the false ceiling to bypass space constraints behind the 12-gang wall switchboard.
+- **AC & Media Control:** **Broadlink RM4 Mini** IR Blaster (placed on desk divider with clear line-of-sight to Cassette AC and Wall TV).
 
-`# Windows:`  
-`iris_env\Scripts\activate`  
-`# Linux/Mac:`  
-`source iris_env/bin/activate`
+---
 
-`# Install required IoT, CV, and AI packages`  
-`pip install tinytuya broadlink opencv-python ultralytics numpy`
+## **3. Physical Wiring & Circuit Mapping**
 
-## **5\. Phase 1: Hardware Interfacing (IoT Layer)**
+The system maps AI detection zones directly to the existing physical switchboard (`S1`–`S12`). The AZIOT relay channels are wired in parallel with manual wall switches so physical manual overrides remain fully operational.
 
-### **5.1 Lighting Control (tinytuya)**
+### AZIOT 4 Node Smart Switch (Module A) Wiring Table
 
-AZIOT devices use Tuya firmware. Local control bypasses external cloud APIs for lower latency.  
-**Extracting Local Keys:**
+| Switch ID | Physical Target | Relay Channel | Control Protocol | Spatial Zone |
+| :--- | :--- | :--- | :--- | :--- |
+| **S1** | Wall TV Display | IR Payload | Broadlink IR | Zone 3 (TV & Lounge) |
+| **S7** | TV Area Bulbs `LB1`–`LB3` | Module A — Channel 1 | Local TCP (`tinytuya`) | Zone 3 (TV & Lounge) |
+| **S4** | Upper Bulbs `LB4`–`LB6` | Module A — Channel 2 | Local TCP (`tinytuya`) | Zone 1 (Upper Desks) |
+| **S2** | Lower Bulbs `LB7`–`LB9` | Module A — Channel 3 | Local TCP (`tinytuya`) | Zone 2 (Lower Desks) |
+| **S12** | Far Bulbs `LB10`–`LB12` | Module A — Channel 4 | Local TCP (`tinytuya`) | Zone 3 (Far Area) |
+| **S3** | Upper LED Panels `LP1`–`LP2` | Virtual Channel | Software Mock | Zone 1 & Zone 2 |
+| **S10** | Lower LED Panels `LP3`–`LP4` | Virtual Channel | Software Mock | Zone 2 & Zone 3 |
 
-> 1. Create a Tuya Developer account (iot.tuya.com) and link the Smart Life mobile app.  
-> 2. Run python \-m tinytuya wizard in the terminal and provide your API credentials to fetch the Device ID and Local\_Key for each relay module.
+---
 
-**Control Snippet:**  
-`import tinytuya`
+## **4. Environment & Dependencies Setup**
 
-`# Connect locally to AZIOT Relay Module A`  
-`relay_a = tinytuya.OutletDevice(`  
-    `dev_id='YOUR_DEVICE_ID',`  
-    `address='192.168.1.50',  # Static IP assigned on local Wi-Fi`  
-    `local_key='YOUR_LOCAL_KEY',`  
-    `version=3.3`  
-`)`
+Run all commands within an isolated Python virtual environment (Python 3.10+ required):
 
-`# Control individual switches (1-indexed)`  
-`relay_a.set_status(True, switch=1)   # Turn ON Switch 1 (LED Panels LP1, LP2)`  
-`relay_a.set_status(False, switch=3)  # Turn OFF Switch 3 (TV Area Bulbs)`
+```bash
+# Create and activate virtual environment
+python3 -m venv iris_env
+source iris_env/bin/activate
 
-### **5.2 AC & TV Control (broadlink)**
+# Install required IoT, CV, FastAPI, and AI packages
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install tinytuya broadlink opencv-python ultralytics fastapi uvicorn pydantic
+```
 
-The RM4 Mini broadcasts Infrared (IR) pulses learned from physical remotes.  
-**Learning IR Codes:**
+---
 
-> 1. Call device.enter\_learning() to place the puck into learning mode.  
-> 2. Point the physical remote at the puck and press the desired command (e.g., 'Cool 24°C').  
-> 3. Retrieve and save the hex payload string returned by device.check\_data().
+## **5. IoT Hardware Interfacing Layer**
 
-**Execution Snippet:**  
-`import broadlink`
+### **5.1 Lighting Control (`tinytuya`)**
 
-`# Discover and authenticate device`  
-`devices = broadlink.discover(timeout=5)`  
-`rm4 = devices[0]`  
-`rm4.auth()`
+AZIOT devices run Tuya firmware. Direct local TCP connection (port 6668) bypasses Tuya cloud servers for sub-100ms latency:
 
-`# Pre-recorded Hex payloads from learning phase`  
-`AC_COOL_24 = bytes.fromhex("2600500000012...")`   
-`AC_POWER_OFF = bytes.fromhex("2600480000011...")`
+```python
+import tinytuya
 
-`# Send command to AC`  
-`rm4.send_data(AC_COOL_24)`
+# Connect locally to AZIOT 4 Node Smart Switch
+relay_a = tinytuya.OutletDevice(
+    dev_id='YOUR_DEVICE_ID',
+    address='192.168.30.125', # Static IP on local network
+    local_key='YOUR_LOCAL_KEY',
+    version=3.3
+)
 
-## **6\. Phase 2: Computer Vision Layer**
+# Control individual nodes (1-indexed)
+relay_a.set_status(True, switch=1)   # Turn ON Switch S7 (TV Area Bulbs)
+relay_a.set_status(False, switch=3)  # Turn OFF Switch S2 (Lower Bulbs)
+```
+
+### **5.2 AC & TV Control (`broadlink`)**
+
+The RM4 Mini broadcasts Infrared (IR) pulses learned from physical remotes:
+
+```python
+import broadlink
+
+devices = broadlink.discover(timeout=5)
+rm4 = devices[0]
+rm4.auth()
+
+# Send command to AC
+AC_COOL_24 = bytes.fromhex("2600500000012...")
+rm4.send_data(AC_COOL_24)
+```
+
+---
+
+## **6. Computer Vision Layer**
 
 ### **6.1 Fast Motion Engine (OpenCV at 5 FPS)**
 
-Runs continuously to detect pixel differences across designated spatial zones for instant lighting response.  
-`import cv2`
+Evaluates frame-by-frame pixel differences across spatial bounding boxes (`SPATIAL_ZONES`) for instant visual telemetry feedback:
 
-`# Stream capture from overhead CCTV`  
-`cap = cv2.VideoCapture("rtsp://admin:password@192.168.1.100:554/stream1")`
+```python
+import cv2
 
-`ret, frame1 = cap.read()`  
-`ret, frame2 = cap.read()`
+diff = cv2.absdiff(frame1, frame2)
+gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+blur = cv2.GaussianBlur(gray, (5, 5), 0)
+_, thresh = cv2.threshold(blur, 20, 255, cv2.THRESH_BINARY)
+dilated = cv2.dilate(thresh, None, iterations=3)
+contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+```
 
-`while cap.isOpened():`  
-    `diff = cv2.absdiff(frame1, frame2)`  
-    `gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)`  
-    `blur = cv2.GaussianBlur(gray, (5, 5), 0)`  
-    `_, thresh = cv2.threshold(blur, 20, 255, cv2.THRESH_BINARY)`  
-    `dilated = cv2.dilate(thresh, None, iterations=3)`  
-    `contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)`
+### **6.2 Real-Time Occupancy Engine (YOLOv8 at 1-Second Interval)**
 
-    `for contour in contours:`  
-        `if cv2.contourArea(contour) < 5000:  # Threshold to ignore minor noise/shadows`  
-            `continue`  
-          
-        `# Trigger local lighting relays instantly when spatial motion is detected`  
-        `# relay_a.set_status(True, switch=1)`  
-          
-    `frame1 = frame2`  
-    `ret, frame2 = cap.read()`
+Executes lightweight object detection (`models/best.pt` or `yolov8n.pt`) at 1-second intervals to calculate total headcount:
 
-### **6.2 Presence & Occupancy Engine (YOLOv8 at 30-sec Interval)**
+```python
+from ultralytics import YOLO
 
-Takes a high-resolution snapshot every 30 seconds to count human presence and adjust AC output or initiate a delayed shut-off.  
-`from ultralytics import YOLO`
+model = YOLO('models/best.pt')
 
-`# Load lightweight object detection model`  
-`model = YOLO('yolov8n.pt')`
+def get_occupancy_count(frame):
+    results = model(frame, verbose=False)
+    count = 0
+    for r in results:
+        for box in r.boxes:
+            if int(box.cls[0]) == 0:  # Class ID 0 = 'person'
+                count += 1
+    return count
+```
 
-`def get_occupancy_count(frame):`  
-    `results = model(frame, verbose=False)`  
-    `person_count = 0`  
-    `for r in results:`  
-        `for box in r.boxes:`  
-            `if int(box.cls[0]) == 0:  # Class ID 0 corresponds to 'person'`  
-                `person_count += 1`  
-    `return person_count`
+---
 
-## **7\. Non-Blocking Async Orchestration**
+## **7. Non-Blocking Async Orchestration Engine**
 
-**Developer Rule:** Do NOT use time.sleep(30) inside the main frame reading loop. Pausing the loop blocks the RTSP buffer, leading to frame lag and eventual pipeline failure.  
-Use non-blocking timestamp comparisons to manage the polling intervals:  
-`import time`  
-`import cv2`
+The orchestrator executes a non-blocking step loop at 5 FPS (`200ms` cycle). CPU core allocation is capped at 50% system capacity to guarantee smooth multitasking.
 
-`cap = cv2.VideoCapture("rtsp://admin:password@192.168.1.100:554/stream1")`
+### **7.1 Headcount Lighting & Climate Rules (AUTO Mode)**
 
-`last_ai_check = time.time()`  
-`zero_occupancy_counter = 0`
+- **Headcount > 3 (High Occupancy)**:
+  - Turn **ON** ALL Light Bulbs (`S7`, `S4`, `S2`, `S12`).
+  - Set AC to **22°C Cool High**.
+- **Headcount 1–3 (Standard Occupancy)**:
+  - Turn **ON** Upper & Far Bulbs (`S4`, `S12`).
+  - Hold extra bulbs (`S7`, `S2`) for a **3-second anti-flicker delay** before turning OFF.
+  - Set AC to **24°C Cool Auto**.
+- **Headcount == 0 (Zero Occupancy / Vacancy)**:
+  - **Light Bulbs (LB)**: Auto-OFF after **3 seconds**.
+  - **LED Panels (LP)**: Auto-OFF after **5 seconds**.
+  - **Air Conditioner (AC) & TV**: Auto-OFF after **10 minutes (600 seconds)**.
 
-`while cap.isOpened():`  
-    `ret, frame = cap.read()`  
-    `if not ret:`  
-        `continue`
+---
 
-    `# 1. Continuous motion detection runs here on every frame...`
+## **8. Frontend Dashboard Requirements**
 
-    `# 2. Asynchronous 30-Second AI Polling Loop`  
-    `current_time = time.time()`  
-    `if current_time - last_ai_check >= 30:`  
-        `count = get_occupancy_count(frame)`  
-        `print(f"[Project Iris] Current Headcount: {count}")`  
-          
-        `if count > 0:`  
-            `zero_occupancy_counter = 0`  
-            `if count >= 4:`  
-                `# High occupancy -> Lower AC Temp`  
-                `# rm4.send_data(AC_COOL_22)`  
-                `pass`  
-            `else:`  
-                `# Moderate occupancy -> Standard Temp`  
-                `# rm4.send_data(AC_COOL_24)`  
-                `pass`  
-        `else:`  
-            `zero_occupancy_counter += 1`  
-            `# If room is empty for 3 consecutive checks (90 seconds / 3 min window)`  
-            `if zero_occupancy_counter >= 3:`  
-                `print("[Project Iris] Vacancy confirmed. Powersaving mode engaged.")`  
-                `# Turn OFF AC & Lights via relays and Broadlink`  
-                  
-        `last_ai_check = current_time`
+The React 18 dashboard (`frontend/`) presents live telemetry over WebSockets (`/ws/telemetry`):
 
-## **8\. Frontend Dashboard Requirements**
+1. **2D Spatial Floorplan**: Interactive top-view visualization rendering active lights, active zones, and headcount.
+2. **System Telemetry Panel**: Live Headcount, AC Setpoint/Fan Speed, Active Power (kW), Cumulative kWh Saved, and Financial Cost Saved ($USD).
+3. **Switchboard Override Matrix**: Manual toggles for physical switches `S1`–`S12`.
+4. **Preset Selector**:
+   - **AUTO**: Full AI vision control.
+   - **PRESENTATION**: Dims ambient lighting, turns ON TV, sets AC to quiet mode (24°C Low Fan).
+   - **POWER_SAVING**: Forces all lights, AC, and TV OFF.
+   - **MANUAL**: Bypasses AI vision overrides for direct testing.
 
-The frontend team will build a single-page monitoring dashboard (React / React Native Web) with the following specifications:
+---
 
-> 1. **2D Spatial Zone Map:** Interactive layout showing the 3 physical seating areas. Zones glow active/inactive based on real-time state payloads from the backend WebSocket/API.  
-> 2. **Live System Telemetry:**  
-   * Active Headcount metrics.  
-   * Target AC Setpoint & Fan Speed status.  
-   * Estimated daily kWh energy savings indicator.  
-> 3. **Control Overrides:** Manual toggle switches to force specific lighting rows ON/OFF during maintenance, bypassing AI logic.  
-> 4. **Presentation Mode Preset:** One-tap macro that dims ambient lighting rows, sets AC to quiet/low fan mode, and sends the Broadlink IR power-on payload to the TV.
+## **9. Edge Case & Failure Handling**
 
-## **9\. Troubleshooting & Edge Cases**
-
-> * **RTSP Stream Latency:** If the camera feed lags behind real time, ensure the OpenCV buffer size is set to 1: cap.set(cv2.CAP\_PROP\_BUFFERSIZE, 1).  
-> * **tinytuya Connection Errors:** Tuya devices accept only one active local TCP connection at a time. Ensure the Smart Life mobile app is closed on all mobile devices during testing.  
-> * **Broadlink Discovery Failure:** The Broadlink RM4 Mini must reside on the same 2.4GHz Wi-Fi network subnet as the edge compute machine; cross-subnet discovery pings will be dropped by standard router configurations.
+- **Network Disconnection / Recovery**: Auto-reconnects to Tuya local sockets. Re-starting 3-strike vacancy timers upon hardware reconnection to prevent accidental blackout.
+- **Hardware Mock Mode**: Automatically falls back to mock hardware driver when physical relays are disconnected or `HARDWARE_MOCK_MODE=true`.
+- **RTSP Stream Pause / Resume**: Suspends background YOLO CPU calculations when streaming is paused, conserving server resources.
