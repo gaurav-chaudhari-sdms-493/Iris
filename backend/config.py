@@ -96,10 +96,13 @@ DETECTION_MIN_HEAD_H = float(os.environ.get("IRIS_MIN_HEAD_H", 0.0))
 PERSON_MODEL_PATH = os.environ.get("IRIS_PERSON_MODEL", "").strip()
 PERSON_CONFIDENCE = float(os.environ.get("IRIS_PERSON_CONF", 0.40))
 PERSON_MIN_BODY_H = float(os.environ.get("IRIS_MIN_BODY_H", 0.0))
-# Run the body model on every poll instead of only when it can change the tier.
-# Costs roughly double the inference time; set true if an exact count matters
-# more than latency.
-PERSON_ALWAYS_ON = os.environ.get("IRIS_PERSON_ALWAYS", "false").lower() == "true"
+# Run the body model on every poll. Default ON: the tier-gated version had a
+# self-reinforcing dead zone at 1-2 heads where the body model -- the only
+# detector that sees someone face-down at a laptop -- was skipped, so the count
+# could not climb out of the band that skipped it. Measured 2 correct polls in 20
+# with five people in the room. Costs roughly double the inference time; set
+# false only on hardware that cannot afford it.
+PERSON_ALWAYS_ON = os.environ.get("IRIS_PERSON_ALWAYS", "true").lower() == "true"
 
 # Two body boxes overlapping by more than this share of the smaller box are
 # treated as one person. The detector often returns both a partial box (torso

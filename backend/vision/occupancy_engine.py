@@ -303,18 +303,25 @@ class OccupancyEngine:
             if rejected:
                 logger.info(f"[Occupancy] {rejected} detection(s) gated out (too distant / outside region).")
 
-            # The body model costs roughly as much again as the head model (~1s
-            # combined on this CPU, against a 1s poll), so only spend it when it
-            # can actually change the lighting decision:
-            #   0 heads      -> a miss here wrongly reports an empty room and kills
-            #                   the lights while people are still in it.
-            #   >= threshold -> one more occupant crosses into the "all lines on"
-            #                   tier, so an extra body matters.
-            #   1..threshold-1 -> the tier is identical whether it is 1, 2 or 3
-            #                   people, so a rescue would change nothing.
-            worth_checking = (headcount == 0
-                              or headcount >= HEADCOUNT_PANEL_ONLY_MAX
-                              or PERSON_ALWAYS_ON)
+            # The body model always runs. An earlier version skipped it when the
+            # head model returned 1..threshold-1 heads, reasoning that the tier is
+            # identical for 1, 2 or 3 people so a rescue could not change the
+            # decision. That reasoning is wrong, and wrong in a self-reinforcing
+            # way: a rescue in that band can add two bodies and land on 4, which is
+            # a different tier entirely. Skipping it meant the count could only
+            # leave the 1-2 band on a poll where the head model found an extra head
+            # unaided -- measured at 2 polls in 20 with five people in the room,
+            # while an occupant face-down at a laptop (no face, so no head box) was
+            # invisible the rest of the time.
+            #
+            # The saving was ~1s of inference in exactly the case where the body
+            # model is the only detector that works. The camera delivers new pixels
+            # about every 2s and stale repeats are skipped upstream, so there is
+            # headroom to just always run it. PERSON_ALWAYS_ON is retained as an
+            # escape hatch for slower hardware; setting it false restores the old
+            # tier-gated behaviour along with the dead zone.
+            worth_checking = PERSON_ALWAYS_ON or (headcount == 0
+                                                  or headcount >= HEADCOUNT_PANEL_ONLY_MAX)
             rescued, rescued_boxes = (
                 self._rescue_missed_people(frame, all_head_centres)
                 if worth_checking else (0, [])
