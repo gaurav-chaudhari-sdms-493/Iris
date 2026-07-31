@@ -61,6 +61,59 @@ VIDEO_PATH = os.environ.get("IRIS_VIDEO_PATH", "data/office/VIDEO-2026-07-28-15-
 USE_SIMULATED_STREAM = os.environ.get("IRIS_SIMULATED", "true").lower() == "true"
 YOLO_MODEL_PATH = os.environ.get("IRIS_YOLO_MODEL", "models/best.pt")
 
+# Minimum detection confidence for a head to count as an occupant.
+# Lower this if overhead heads are being missed at the demo site.
+DETECTION_CONFIDENCE = float(os.environ.get("IRIS_YOLO_CONF", 0.50))
+
+# Inference letterbox size. Overhead heads are small; 960 resolves them far better
+# than the 640 default and measured no slower on this CPU.
+DETECTION_IMGSZ = int(os.environ.get("IRIS_YOLO_IMGSZ", 960))
+
+# NMS IoU. The 0.7 default leaves two boxes on a single head, inflating headcount.
+DETECTION_IOU = float(os.environ.get("IRIS_YOLO_IOU", 0.50))
+
+# Hikvision ISAPI snapshots default to the 704x480 sub-stream. Requesting an
+# explicit resolution pulls the full-resolution main stream instead, which is
+# what makes distant heads detectable at all.
+CCTV_SNAPSHOT_WIDTH = int(os.environ.get("CCTV_SNAPSHOT_WIDTH", 1920))
+CCTV_SNAPSHOT_HEIGHT = int(os.environ.get("CCTV_SNAPSHOT_HEIGHT", 1080))
+
+# --- Occupant depth / region gating -------------------------------------------
+# The developer row sits directly behind the lounge and projects into the same
+# band of the frame, so no rectangle can separate them. Apparent head size can:
+# a head at twice the distance is half the height. Minimum head height, as a
+# fraction of frame height. 0.0 disables the gate.
+# Calibrate with: ./iris_env/bin/python -m hardware.measure_heads
+DETECTION_MIN_HEAD_H = float(os.environ.get("IRIS_MIN_HEAD_H", 0.0))
+
+# Optional rectangular region of interest, normalized "x_min,y_min,x_max,y_max".
+# A head is counted only if its centre falls inside. Empty disables the gate.
+# Safety-net body detector. The head model is face-biased and can miss someone
+# turned fully away from the camera; a COCO person model sees the whole body and
+# does not care which way they face. Empty path = disabled.
+# Body-box height is NOT a reliable depth cue (a seated person is occluded by the
+# desk and measures small), so this needs its own calibrated gate before use.
+PERSON_MODEL_PATH = os.environ.get("IRIS_PERSON_MODEL", "").strip()
+PERSON_CONFIDENCE = float(os.environ.get("IRIS_PERSON_CONF", 0.40))
+PERSON_MIN_BODY_H = float(os.environ.get("IRIS_MIN_BODY_H", 0.0))
+# Run the body model on every poll instead of only when it can change the tier.
+# Costs roughly double the inference time; set true if an exact count matters
+# more than latency.
+PERSON_ALWAYS_ON = os.environ.get("IRIS_PERSON_ALWAYS", "false").lower() == "true"
+
+# Two body boxes overlapping by more than this share of the smaller box are
+# treated as one person. The detector often returns both a partial box (torso
+# above a desk) and a full box for the same body, and plain NMS keeps both.
+BODY_OVERLAP_MERGE = float(os.environ.get("IRIS_BODY_OVERLAP_MERGE", 0.5))
+
+_roi_raw = os.environ.get("IRIS_DETECTION_ROI", "").strip()
+try:
+    DETECTION_ROI = [float(v) for v in _roi_raw.split(",")] if _roi_raw else None
+    if DETECTION_ROI and len(DETECTION_ROI) != 4:
+        DETECTION_ROI = None
+except ValueError:
+    DETECTION_ROI = None
+
 # Hardware Direct Access Mode
 HARDWARE_MOCK_MODE = os.environ.get("IRIS_HARDWARE_MOCK", "false").lower() == "true"
 
@@ -166,10 +219,47 @@ OCCUPANCY_POLL_INTERVAL_SEC = 1
 # Headcount Lighting Thresholds
 HEADCOUNT_PANEL_ONLY_MAX = 3  # Headcount 1-3 -> LED Panels Only; >3 -> All Lights ON
 
+# Consecutive polls that must agree before escalating to the all-lines-on tier.
+# Detection is noisy at the margin -- a single spurious box (a duplicate that
+# survived NMS, or a distant head briefly crossing the size gate) is enough to
+# read 4 people in a room of 3. Acting on one frame turns the lights on, the next
+# frame reads 3 again, and the anti-flicker hold produces a visible on/off cycle.
+# Requiring agreement across polls costs a second of latency and removes it.
+HIGH_TIER_CONFIRM_POLLS = int(os.environ.get("IRIS_HIGH_TIER_CONFIRM", 2))
+
+# How long the room must stay below the high-occupancy threshold before the extra
+# bulbs are released. Deliberately far longer than the escalation delay: a light
+# that arrives late goes unnoticed, a light that blinks off and on does not.
+HIGH_TIER_RELEASE_SEC = float(os.environ.get("IRIS_HIGH_TIER_RELEASE", 30))
+
+# Directory for annotated frames captured whenever the count reads above the
+# high-occupancy threshold. Set to diagnose spurious occupants; empty disables.
+DEBUG_DUMP_DIR = os.environ.get("IRIS_DEBUG_DUMP", "").strip()
+
+# Consecutive zero-headcount polls required before the vacancy timer even starts.
+# The mirror image of HIGH_TIER_CONFIRM_POLLS, and far more important: escalating
+# on a bad frame turns a light on, but reading zero on a bad frame turns the room
+# dark on people who are still in it. The head model is face-biased, so a single
+# occupant who turns away can vanish from a poll while plainly present.
+ZERO_OCCUPANCY_CONFIRM_POLLS = int(os.environ.get("IRIS_ZERO_CONFIRM_POLLS", 3))
+
+# Vacancy is vetoed while frame-differencing motion was seen this recently.
+# Motion is a genuinely independent sensor: it has no notion of class or pose, so
+# it still fires on someone turned away, crouched, or half-occluded by the sofa --
+# exactly the cases both the head and body detectors lose. An empty room produces
+# no contours above the area gate, so this does not block real auto-off.
+# 0 disables the veto.
+VACANCY_MOTION_VETO_SEC = float(os.environ.get("IRIS_VACANCY_MOTION_VETO", 10))
+
 # Device Auto-Off Vacancy Timers (FSD Section 7.2)
-LB_AUTO_OFF_SEC = 3      # 3 seconds for Light Bulbs (LB)
-LP_AUTO_OFF_SEC = 5      # 5 seconds for LED Panels (LP)
-AC_AUTO_OFF_SEC = 600    # 10 Minutes (600 seconds) for Air Conditioner (AC)
+# Raising LB_AUTO_OFF_SEC is the cheapest insurance against a brief detection
+# miss (someone turning away) switching the lights off while the room is in use.
+# At a ~1s poll that a stale camera frame often halves, 3s was only two or three
+# missed polls from darkness. A light lingering 20s after a real exit reads as
+# normal; one that dies on an occupied room reads as broken.
+LB_AUTO_OFF_SEC = float(os.environ.get("IRIS_LB_AUTO_OFF", 20))   # Light Bulbs (LB)
+LP_AUTO_OFF_SEC = float(os.environ.get("IRIS_LP_AUTO_OFF", 5))    # LED Panels (LP)
+AC_AUTO_OFF_SEC = float(os.environ.get("IRIS_AC_AUTO_OFF", 600))  # Air Conditioner (AC)
 
 BASE_KWH_RATE = 0.15          # $0.15 / kWh
 FULL_LOAD_POWER_KW = 1.8      # Lights + AC peak load in kW

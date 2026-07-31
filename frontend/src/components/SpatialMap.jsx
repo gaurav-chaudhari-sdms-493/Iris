@@ -20,10 +20,14 @@ export default function SpatialMap({ zoneStates, relays, tvState, acState, syste
     onSetMode && onSetMode('AUTO');
   };
 
+  // The four bulb lines currently wired to the AZIOT relay. LED panels (S3, S10)
+  // are excluded until Relay B is installed -- the backend rejects them today.
+  const WIRED_SWITCHES = ['S2', 'S4', 'S7', 'S12'];
+
   const handleAllLightsOn = () => {
     setActivePreset('ALL_ON');
     onSetMode && onSetMode('MANUAL');
-    ['S2', 'S3', 'S4', 'S7', 'S10', 'S12'].forEach((swId) => {
+    WIRED_SWITCHES.forEach((swId) => {
       onToggleSwitch && onToggleSwitch(swId, true);
     });
   };
@@ -31,16 +35,9 @@ export default function SpatialMap({ zoneStates, relays, tvState, acState, syste
   const handleAllLightsOff = () => {
     setActivePreset('ALL_OFF');
     onSetMode && onSetMode('MANUAL');
-    ['S2', 'S3', 'S4', 'S7', 'S10', 'S12'].forEach((swId) => {
+    WIRED_SWITCHES.forEach((swId) => {
       onToggleSwitch && onToggleSwitch(swId, false);
     });
-  };
-
-  const handlePanelsOnly = () => {
-    setActivePreset('PANELS_ONLY');
-    onSetMode && onSetMode('MANUAL');
-    ['S3', 'S10'].forEach((swId) => onToggleSwitch && onToggleSwitch(swId, true));
-    ['S2', 'S4', 'S7', 'S12'].forEach((swId) => onToggleSwitch && onToggleSwitch(swId, false));
   };
 
   // Switch circuit states
@@ -80,22 +77,29 @@ export default function SpatialMap({ zoneStates, relays, tvState, acState, syste
   );
 
   // ALL LED PANELS ARE COMPACT SQUARE TILES
-  const renderSquarePanel = (id, isOn, switchId) => (
+  // `pending` marks hardware that is specced but not yet installed (Relay B).
+  const renderSquarePanel = (id, isOn, switchId, pending = false) => (
     <div
       key={id}
-      onClick={() => onToggleSwitch && onToggleSwitch(switchId, !isOn)}
-      className="cursor-pointer select-none group flex justify-center relative z-10"
+      onClick={() => !pending && onToggleSwitch && onToggleSwitch(switchId, !isOn)}
+      title={pending ? 'LED panels activate once Relay B is installed' : undefined}
+      className={`select-none group flex justify-center relative z-10 ${pending ? 'cursor-not-allowed' : 'cursor-pointer'
+        }`}
     >
-      <div className={`relative w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-xl border-2 transition-all duration-300 flex flex-col items-center justify-center p-1 ${isOn
-        ? 'bg-gradient-to-br from-cyan-100 via-white to-cyan-300 border-cyan-300 shadow-[0_0_25px_6px_rgba(6,182,212,0.55)]'
-        : 'bg-slate-900/90 border-slate-800 shadow-inner group-hover:border-slate-700'
+      <div className={`relative w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-xl border-2 transition-all duration-300 flex flex-col items-center justify-center p-1 ${pending
+        ? 'bg-slate-900/40 border-dashed border-slate-700/60 opacity-50'
+        : isOn
+          ? 'bg-gradient-to-br from-cyan-100 via-white to-cyan-300 border-cyan-300 shadow-[0_0_25px_6px_rgba(6,182,212,0.55)]'
+          : 'bg-slate-900/90 border-slate-800 shadow-inner group-hover:border-slate-700'
         }`}>
-        <div className="absolute inset-1 border border-dashed border-slate-400/20 rounded-lg pointer-events-none" />
-        <span className={`text-xs sm:text-sm font-mono font-black tracking-wider ${isOn ? 'text-slate-950' : 'text-slate-200'}`}>
+        {!pending && <div className="absolute inset-1 border border-dashed border-slate-400/20 rounded-lg pointer-events-none" />}
+        <span className={`text-xs sm:text-sm font-mono font-black tracking-wider ${pending ? 'text-slate-500' : isOn ? 'text-slate-950' : 'text-slate-200'
+          }`}>
           {id}
         </span>
-        <span className={`text-[8px] sm:text-[9px] font-mono font-bold ${isOn ? 'text-slate-900 font-extrabold' : 'text-slate-500'}`}>
-          {isOn ? 'LIT' : 'OFF'}
+        <span className={`text-[8px] sm:text-[9px] font-mono font-bold leading-tight text-center ${pending ? 'text-slate-600' : isOn ? 'text-slate-900 font-extrabold' : 'text-slate-500'
+          }`}>
+          {pending ? 'RELAY B' : isOn ? 'LIT' : 'OFF'}
         </span>
       </div>
     </div>
@@ -177,17 +181,15 @@ export default function SpatialMap({ zoneStates, relays, tvState, acState, syste
             <span>All Lights OFF</span>
           </button>
 
-          {/* 4. Panels Only */}
+          {/* 4. Panels Only -- disabled until Relay B drives the LED panels */}
           <button
-            onClick={handlePanelsOnly}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 border transition-all cursor-pointer active:scale-95 ${activePreset === 'PANELS_ONLY'
-              ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white border-purple-400 shadow-md shadow-purple-500/30'
-              : 'bg-slate-900/60 hover:bg-slate-800 text-slate-400 border-transparent hover:text-slate-200'
-              }`}
-            title="Turns LED Panels ON only"
+            disabled
+            className="px-2.5 sm:px-3 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 border border-dashed border-slate-800 bg-slate-900/30 text-slate-600 cursor-not-allowed opacity-60"
+            title="LED panels activate once Relay B is installed"
           >
             <Lightbulb className="w-3.5 h-3.5" />
             <span>Panels Only</span>
+            <span className="text-[8px] font-mono tracking-wider">SOON</span>
           </button>
 
         </div>
@@ -196,18 +198,15 @@ export default function SpatialMap({ zoneStates, relays, tvState, acState, syste
       {/* BLUEPRINT CEILING SURFACE WITH CONDUIT WIRING LINES FOR BULBS */}
       <div className="relative flex-1 flex flex-col justify-between bg-slate-950 border-2 border-slate-800 rounded-3xl p-2.5 sm:p-3.5 space-y-2 shadow-2xl bg-[linear-gradient(to_right,#1e293b20_1px,transparent_1px),linear-gradient(to_bottom,#1e293b20_1px,transparent_1px)] bg-[size:24px_24px]">
 
-        {/* 1. TOP: TV TOP VIEW */}
+        {/* 1. TOP: TV TOP VIEW -- awaiting Broadlink IR blaster */}
         <div className="flex justify-center w-full relative z-10">
           <div
-            onClick={() => onToggleSwitch && onToggleSwitch('S1', !isS1On)}
-            className={`w-3/5 py-1 rounded-lg border-2 text-center font-mono cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-md ${isS1On
-              ? 'bg-gradient-to-r from-purple-950 via-purple-900 to-purple-950 border-purple-400 text-purple-200 shadow-[0_0_15px_rgba(168,85,247,0.4)]'
-              : 'bg-slate-900/90 border-slate-800 text-slate-500 hover:border-slate-700'
-              }`}
+            title="TV control activates once the Broadlink IR blaster is installed"
+            className="w-3/5 py-1 rounded-lg border-2 border-dashed border-slate-800 bg-slate-900/40 text-slate-600 text-center font-mono cursor-not-allowed opacity-60 transition-all flex items-center justify-center gap-1.5"
           >
-            <Tv className={`w-3.5 h-3.5 ${isS1On ? 'text-purple-400' : 'text-slate-600'}`} />
+            <Tv className="w-3.5 h-3.5 text-slate-700" />
             <span className="text-[10px] sm:text-[11px] font-black tracking-widest uppercase">
-              TV DISPLAY {isS1On ? '(S1 ON)' : '(OFF)'}
+              TV DISPLAY (PENDING IR)
             </span>
           </div>
         </div>
@@ -224,7 +223,7 @@ export default function SpatialMap({ zoneStates, relays, tvState, acState, syste
 
         {/* 3. ROW 2: SQUARE 2x2 PANEL LP1 (S3 CIRCUIT) */}
         <div className="flex justify-center w-full relative">
-          {renderSquarePanel('LP1', isS3On, 'S3')}
+          {renderSquarePanel('LP1', isS3On, 'S3', true)}
         </div>
 
         {/* 4. ROW 3: LB4 | LB5 | LB6 CONNECTED BY S4 WIRE CONDUIT */}
@@ -240,64 +239,30 @@ export default function SpatialMap({ zoneStates, relays, tvState, acState, syste
         {/* 5. ROW 4: SQUARE LP2 (S3) | SQUARE AC | SQUARE LP3 (S10) */}
         <div className="grid grid-cols-3 gap-1 sm:gap-2 items-center relative">
           <div className="justify-self-end">
-            {renderSquarePanel('LP2', isS3On, 'S3')}
+            {renderSquarePanel('LP2', isS3On, 'S3', true)}
           </div>
 
-          {/* INTERACTIVE CASSETTE AC UNIT */}
+          {/* CASSETTE AC UNIT -- awaiting Broadlink IR blaster */}
           <div
-            onClick={() => onAcChange && onAcChange({ power: isAcOn ? 'OFF' : 'ON' })}
-            className={`justify-self-center w-28 h-18 sm:w-34 sm:h-20 md:w-44 md:h-24 rounded-2xl border-2 transition-all flex flex-col items-center justify-between p-1.5 sm:p-2 relative shadow-xl z-10 cursor-pointer select-none group ${isAcOn
-              ? 'bg-slate-950 border-emerald-500 text-emerald-300 shadow-[0_0_25px_rgba(16,185,129,0.45)] hover:border-emerald-400 hover:scale-[1.02]'
-              : 'bg-slate-900/90 border-slate-800 text-slate-500 hover:border-slate-700 hover:scale-[1.02]'
-              }`}
-            title="Click AC cassette to toggle Power ON / OFF"
+            title="AC control activates once the Broadlink IR blaster is installed"
+            className="justify-self-center w-28 h-18 sm:w-34 sm:h-20 md:w-44 md:h-24 rounded-2xl border-2 border-dashed border-slate-800 bg-slate-900/40 text-slate-600 opacity-60 transition-all flex flex-col items-center justify-center gap-1 p-1.5 sm:p-2 relative z-10 cursor-not-allowed select-none"
           >
             {/* Louvers */}
-            <div className="absolute top-1 left-2 right-2 h-0.5 bg-slate-700/80 rounded" />
-            <div className="absolute bottom-1 left-2 right-2 h-0.5 bg-slate-700/80 rounded" />
+            <div className="absolute top-1 left-2 right-2 h-0.5 bg-slate-800 rounded" />
+            <div className="absolute bottom-1 left-2 right-2 h-0.5 bg-slate-800 rounded" />
 
-            <div className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-black tracking-wider mt-0.5">
-              <Wind className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isAcOn ? 'text-emerald-400 animate-spin' : 'text-slate-600'}`} />
-              <span>AC {isAcOn ? '(ON)' : '(OFF)'}</span>
+            <div className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-black tracking-wider">
+              <Wind className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-700" />
+              <span>CASSETTE AC</span>
             </div>
 
-            {/* Interactive Temp Control Badge with - and + buttons */}
-            <div className="flex items-center gap-1 sm:gap-1.5 z-20 my-0.5">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAcChange && onAcChange({ temperature: Math.max(16, acTemp - 1) });
-                }}
-                disabled={!isAcOn}
-                className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-slate-900 hover:bg-emerald-600/40 text-emerald-300 font-black text-xs flex items-center justify-center border border-emerald-500/40 cursor-pointer active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition shadow"
-                title="Decrease Temperature (-1°C)"
-              >
-                -
-              </button>
-
-              <span className={`text-[9px] sm:text-[11px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border ${isAcOn
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
-                : 'bg-slate-800 text-slate-500 border-slate-700'
-                }`}>
-                {isAcOn ? `${acTemp}°C` : 'OFF'}
-              </span>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAcChange && onAcChange({ temperature: Math.min(30, acTemp + 1) });
-                }}
-                disabled={!isAcOn}
-                className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-slate-900 hover:bg-emerald-600/40 text-emerald-300 font-black text-xs flex items-center justify-center border border-emerald-500/40 cursor-pointer active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition shadow"
-                title="Increase Temperature (+1°C)"
-              >
-                +
-              </button>
-            </div>
+            <span className="text-[8px] sm:text-[9px] font-mono font-bold tracking-wider text-slate-600 text-center leading-tight">
+              PENDING IR
+            </span>
           </div>
 
           <div className="justify-self-start">
-            {renderSquarePanel('LP3', isS10On, 'S10')}
+            {renderSquarePanel('LP3', isS10On, 'S10', true)}
           </div>
         </div>
 
@@ -313,7 +278,7 @@ export default function SpatialMap({ zoneStates, relays, tvState, acState, syste
 
         {/* 7. ROW 6: SQUARE 2x2 PANEL LP4 (S10 CIRCUIT) */}
         <div className="flex justify-center w-full relative">
-          {renderSquarePanel('LP4', isS10On, 'S10')}
+          {renderSquarePanel('LP4', isS10On, 'S10', true)}
         </div>
 
         {/* 8. ROW 7: LB10 | LB11 | LB12 CONNECTED BY S12 WIRE CONDUIT */}

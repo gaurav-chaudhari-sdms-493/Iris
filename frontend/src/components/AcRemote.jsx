@@ -1,8 +1,13 @@
 import React from 'react';
 import { Snowflake, Plug, ChevronUp, ChevronDown } from 'lucide-react';
 
+// Flip to true once the Broadlink IR blaster is wired up.
+const IR_HARDWARE_READY = false;
+
 export default function AcRemote({ telemetry, onAcChange }) {
-  const acState = telemetry?.ac_state;
+  // Until the blaster arrives the backend only simulates AC state, so the whole
+  // panel renders read-only rather than pretending to actuate hardware.
+  const acState = IR_HARDWARE_READY ? telemetry?.ac_state : null;
 
   // AC Remote Controls
   const handleTempChange = (delta) => {
@@ -39,16 +44,29 @@ export default function AcRemote({ telemetry, onAcChange }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-slate-100 font-bold text-base md:text-lg">
-          <Snowflake className="w-5 h-5 text-cyan-400" />
-          <span>AC Broadlink IR Controller</span>
+          <Snowflake className={`w-5 h-5 ${IR_HARDWARE_READY ? 'text-cyan-400' : 'text-slate-600'}`} />
+          <span className={IR_HARDWARE_READY ? '' : 'text-slate-400'}>AC Broadlink IR Controller</span>
         </div>
+        {!IR_HARDWARE_READY && (
+          <span className="text-[9px] font-mono font-extrabold px-2 py-0.5 rounded-md border border-dashed border-slate-700 bg-slate-900/60 text-slate-500 tracking-wider">
+            PENDING IR
+          </span>
+        )}
       </div>
 
       {/* Thermostat Digital Display Box */}
       <div className="bg-slate-950/90 border-2 border-cyan-500/40 rounded-2xl p-3 sm:p-4 md:p-5 relative shadow-[0_0_25px_rgba(6,182,212,0.15)] flex flex-col justify-between space-y-3 sm:space-y-4">
         {!acState ? (
-          <div className="text-center py-6 text-slate-500 font-mono text-xs animate-pulse">
-            Connecting to AC Engine Telemetry...
+          <div className="text-center py-6 space-y-1.5">
+            <Snowflake className="w-8 h-8 mx-auto text-slate-700" />
+            <div className="text-slate-400 font-mono text-xs font-bold">
+              {IR_HARDWARE_READY ? 'Connecting to AC Engine Telemetry...' : 'AWAITING BROADLINK IR BLASTER'}
+            </div>
+            {!IR_HARDWARE_READY && (
+              <div className="text-slate-600 font-mono text-[10px]">
+                Climate control ships in the next hardware phase
+              </div>
+            )}
           </div>
         ) : (
           <>

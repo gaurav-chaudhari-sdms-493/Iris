@@ -12,7 +12,12 @@ import cv2
 import os
 import logging
 import threading
-from config import VIDEO_PATH
+from config import VIDEO_PATH, CCTV_SNAPSHOT_WIDTH, CCTV_SNAPSHOT_HEIGHT
+
+# Without an explicit resolution the Hikvision ISAPI picture endpoint serves the
+# 704x480 sub-stream. Upscaling that to 1280x720 for inference smears exactly the
+# small overhead heads we need, so pull the full-resolution frame instead.
+SNAPSHOT_QUERY = f"?videoResolutionWidth={CCTV_SNAPSHOT_WIDTH}&videoResolutionHeight={CCTV_SNAPSHOT_HEIGHT}"
 
 logger = logging.getLogger("iris.vision.stream")
 
@@ -38,6 +43,24 @@ class SyntheticStreamGenerator:
         self.available_sources = []
         self.step_delay_counter = 0
 
+        # Live CCTV snapshots are pulled by a background worker instead of inline,
+        # so a slow or unreachable camera never stalls the 5 FPS telemetry loop.
+        # cctv_lock guards only the frame handoff -- never held across network IO.
+        self.cctv_session = None
+        self.cctv_lock = threading.Lock()
+        self.cctv_frame = None
+        self.cctv_frame_ts = 0.0
+        self.cctv_frame_seq = 0
+        # Sequence number of the frame handed out by the last read_frame() call.
+        # Lets the orchestrator tell a genuinely new frame from a re-served one.
+        self.last_served_seq = 0
+        self.cctv_thread = None
+        self.cctv_stop = threading.Event()
+        self.cctv_timeout = float(os.environ.get("IRIS_CCTV_TIMEOUT", 6.0))
+        self.cctv_interval = float(os.environ.get("IRIS_CCTV_INTERVAL", 0.2))
+        self.cctv_max_stale = float(os.environ.get("IRIS_CCTV_MAX_STALE", 5.0))
+        self._cctv_last_error_log = 0.0
+
         # Virtual Occupants state for synthetic fallback
         self.occupants = [
             {"x": 200, "y": 200, "tx": 400, "ty": 250, "speed": 2.5, "hue": (50, 120, 250)},
@@ -57,7 +80,7 @@ class SyntheticStreamGenerator:
         found.append({
             "id": 0,
             "name": f"[Live Camera] Hikvision Camera 06 ({cctv_ip})",
-            "path": f"http://{cctv_ip}/ISAPI/Streaming/channels/601/picture",
+            "path": f"http://{cctv_ip}/ISAPI/Streaming/channels/601/picture{SNAPSHOT_QUERY}",
             "type": "live_cctv"
         })
 
@@ -69,7 +92,7 @@ class SyntheticStreamGenerator:
             found.append({
                 "id": len(found),
                 "name": f"[Live Camera] Hikvision Camera {ch_num:02d} ({cctv_ip})",
-                "path": f"http://{cctv_ip}/ISAPI/Streaming/channels/{ch_code}/picture",
+                "path": f"http://{cctv_ip}/ISAPI/Streaming/channels/{ch_code}/picture{SNAPSHOT_QUERY}",
                 "type": "live_cctv"
             })
 
@@ -133,8 +156,13 @@ class SyntheticStreamGenerator:
             self.duration_sec = 99999.0
             self.current_frame_pos = 0
             logger.info(f"StreamGenerator connected to Live CCTV Camera [{src['name']}] -> {src['path']}")
+            # Drop any previous source's frame so it can't be served as live footage.
+            self.last_frame = None
+            self._start_cctv_worker(src["path"])
             self._read_and_cache_frame(0)
             return
+
+        self._stop_cctv_worker()
 
         if src["type"] == "video" and src["path"] and os.path.exists(src["path"]):
             self.cap = cv2.VideoCapture(src["path"])
@@ -156,6 +184,82 @@ class SyntheticStreamGenerator:
         self.current_frame_pos = 0
         self._read_and_cache_frame(0)
 
+    # ------------------ Live CCTV Background Worker ------------------
+
+    def _start_cctv_worker(self, url):
+        """Spawns the snapshot polling thread for a live CCTV source."""
+        self._stop_cctv_worker()
+        self.cctv_stop = threading.Event()
+        stop_event = self.cctv_stop
+        self.cctv_thread = threading.Thread(
+            target=self._cctv_worker_loop,
+            args=(url, stop_event),
+            name="iris-cctv-poller",
+            daemon=True,
+        )
+        self.cctv_thread.start()
+        logger.info(f"[CCTV Worker] Polling {url} every {self.cctv_interval:.2f}s (timeout {self.cctv_timeout:.1f}s).")
+
+    def _stop_cctv_worker(self):
+        """Signals the current worker to exit. Never joins -- a thread parked in a
+        socket read would otherwise block the caller (which may hold self.lock)."""
+        self.cctv_stop.set()
+        self.cctv_thread = None
+        with self.cctv_lock:
+            self.cctv_frame = None
+            self.cctv_frame_ts = 0.0
+
+    def _cctv_worker_loop(self, url, stop_event):
+        """Fetches snapshots off the telemetry loop's critical path until stopped."""
+        while not stop_event.is_set():
+            started = time.time()
+            frame = self._fetch_cctv_snapshot(url)
+            # A superseded worker must not clobber the new source's frames.
+            if stop_event.is_set():
+                return
+            if frame is not None:
+                with self.cctv_lock:
+                    self.cctv_frame = frame
+                    self.cctv_frame_ts = time.time()
+                    self.cctv_frame_seq += 1
+            elapsed = time.time() - started
+            stop_event.wait(max(0.0, self.cctv_interval - elapsed))
+
+    def _fetch_cctv_snapshot(self, url):
+        """Blocking snapshot fetch. Only ever called from the worker thread."""
+        try:
+            if self.cctv_session is None:
+                import requests
+                from requests.auth import HTTPDigestAuth
+                usr = os.environ.get("CCTV_USER", "admin")
+                pwd = os.environ.get("CCTV_PASS", "admin123")
+                self.cctv_session = requests.Session()
+                self.cctv_session.auth = HTTPDigestAuth(usr, pwd)
+
+            r = self.cctv_session.get(url, timeout=self.cctv_timeout)
+            if r.status_code != 200:
+                self._log_cctv_error(f"HTTP {r.status_code} from {url}")
+                return None
+
+            img_np = np.frombuffer(r.content, dtype=np.uint8)
+            frame = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
+            if frame is None:
+                self._log_cctv_error("snapshot decode failed")
+                return None
+            # Deliberately NOT resized: the detector needs the camera's
+            # native pixels. /video_feed scales down for display only.
+            return frame
+        except Exception as e:
+            self._log_cctv_error(str(e))
+            return None
+
+    def _log_cctv_error(self, msg):
+        """Rate-limited so an offline camera doesn't flood the log every 200ms."""
+        now = time.time()
+        if now - self._cctv_last_error_log >= 10.0:
+            self._cctv_last_error_log = now
+            logger.error(f"Live CCTV capture error: {msg}")
+
     def _read_and_cache_frame(self, target_frame=None):
         """Reads frame from VideoCapture or Live CCTV stream and updates self.last_frame."""
         if target_frame is not None:
@@ -165,27 +269,22 @@ class SyntheticStreamGenerator:
         src = self.available_sources[idx]
 
         if src.get("type") == "live_cctv":
-            try:
-                if not hasattr(self, "cctv_session") or self.cctv_session is None:
-                    import requests
-                    from requests.auth import HTTPDigestAuth
-                    usr = os.environ.get("CCTV_USER", "admin")
-                    pwd = os.environ.get("CCTV_PASS", "admin123")
-                    self.cctv_session = requests.Session()
-                    self.cctv_session.auth = HTTPDigestAuth(usr, pwd)
-
-                url = src["path"]
-                r = self.cctv_session.get(url, timeout=1.5)
-                if r.status_code == 200:
-                    img_np = np.frombuffer(r.content, dtype=np.uint8)
-                    frame = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
-                    if frame is not None:
-                        if frame.shape[1] != self.width or frame.shape[0] != self.height:
-                            frame = cv2.resize(frame, (self.width, self.height))
-                        self.last_frame = frame.copy()
-                        return frame.copy()
-            except Exception as e:
-                logger.error(f"Live CCTV capture error: {e}")
+            # Non-blocking: hand back whatever the worker last pulled.
+            #
+            # A live camera NEVER falls back to the synthetic generator. That
+            # generator paints fake occupants, so substituting it puts fabricated
+            # people (or an empty room) into a real headcount -- which resets the
+            # high-occupancy streak and drives the vacancy auto-off while the room
+            # is actually occupied. No frame is the honest answer; the caller
+            # freezes state instead of acting on invented data.
+            with self.cctv_lock:
+                frame = self.cctv_frame
+                seq = self.cctv_frame_seq
+            if frame is not None:
+                self.last_frame = frame.copy()
+                self.last_served_seq = seq
+                return frame.copy()
+            return None
 
         if self.cap and self.cap.isOpened():
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_pos)
@@ -305,11 +404,10 @@ class SyntheticStreamGenerator:
             src = self.available_sources[idx] if self.available_sources else {}
             is_cctv = src.get("type") == "live_cctv"
 
-            # 0. Live CCTV Camera feed fetch
+            # 0. Live CCTV Camera feed fetch. Returns early either way: a live
+            # source must never be silently replaced by synthetic footage.
             if is_cctv:
-                frame = self._read_and_cache_frame()
-                if frame is not None:
-                    return frame
+                return self._read_and_cache_frame()
 
             # 1. If paused AND NOT live CCTV, return cached frame
             if self.is_paused and not is_cctv and self.last_frame is not None:

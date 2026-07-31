@@ -1,14 +1,16 @@
 import React from 'react';
 import { Sliders, ShieldAlert } from 'lucide-react';
 
+// isSpare  = unused gang, never wired
+// isPending = specced but hardware not installed yet (IR blaster / Relay B)
 const SWITCH_PAIRS = [
   // Row 1 Pairs
   [
-    { id: 'S1', label: 'TV Power', sub: 'Broadlink IR', isSpare: false },
+    { id: 'S1', label: 'TV Power', sub: 'Pending IR', isSpare: false, isPending: true },
     { id: 'S2', label: 'Lower Bulbs', sub: 'LB7, LB8, LB9', isSpare: false },
   ],
   [
-    { id: 'S3', label: 'Upper LED', sub: 'LP1, LP2', isSpare: false },
+    { id: 'S3', label: 'Upper LED', sub: 'Pending Relay B', isSpare: false, isPending: true },
     { id: 'S4', label: 'Upper Bulbs', sub: 'LB4, LB5, LB6', isSpare: false },
   ],
   [
@@ -22,7 +24,7 @@ const SWITCH_PAIRS = [
   ],
   [
     { id: 'S9', label: 'Aux Switch 9', sub: 'Spare Gang 9', isSpare: true },
-    { id: 'S10', label: 'Lower LED', sub: 'LP3, LP4', isSpare: false },
+    { id: 'S10', label: 'Lower LED', sub: 'Pending Relay B', isSpare: false, isPending: true },
   ],
   [
     { id: 'S11', label: 'Aux Switch 11', sub: 'Spare Gang 11', isSpare: true },
@@ -87,13 +89,17 @@ export default function Switchboard({ relays, tvState, onToggleSwitch }) {
               <div key={pIdx} className="grid grid-cols-2 gap-0 border border-slate-800/80 rounded-xl bg-slate-900/30 overflow-hidden">
                 {pair.map((sw) => {
                   const isActive = getSwitchState(sw.id);
+                  const isLocked = sw.isSpare || sw.isPending;
                   return (
                     <div
                       key={sw.id}
-                      onClick={() => !sw.isSpare && onToggleSwitch && onToggleSwitch(sw.id, !isActive)}
+                      onClick={() => !isLocked && onToggleSwitch && onToggleSwitch(sw.id, !isActive)}
+                      title={sw.isPending ? 'Hardware not installed yet' : undefined}
                       className={`flex flex-col items-center justify-between select-none p-2 transition-all duration-200 ${
-                        sw.isSpare 
-                          ? 'bg-slate-900/10 opacity-40 cursor-not-allowed' 
+                        sw.isSpare
+                          ? 'bg-slate-900/10 opacity-40 cursor-not-allowed'
+                          : sw.isPending
+                          ? 'bg-slate-900/20 opacity-50 cursor-not-allowed'
                           : 'bg-slate-900/30 hover:bg-slate-800/60 cursor-pointer'
                       }`}
                     >
@@ -101,7 +107,7 @@ export default function Switchboard({ relays, tvState, onToggleSwitch }) {
                       <div className="text-center w-full mb-2">
                         <div className="flex items-center justify-center gap-1">
                           <span className={`text-xs font-mono font-black ${
-                            isActive ? 'text-emerald-400' : sw.isSpare ? 'text-slate-600' : 'text-red-400'
+                            isLocked ? 'text-slate-600' : isActive ? 'text-emerald-400' : 'text-red-400'
                           }`}>
                             {sw.id}
                           </span>
@@ -115,6 +121,8 @@ export default function Switchboard({ relays, tvState, onToggleSwitch }) {
                       <div className={`relative w-14 h-28 rounded-xl border-2 p-1 transition-all flex items-center justify-center ${
                         sw.isSpare
                           ? 'bg-slate-950 border-slate-800 shadow-inner'
+                          : sw.isPending
+                          ? 'bg-slate-950 border-dashed border-slate-700 shadow-inner'
                           : isActive
                           ? 'bg-slate-950 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.35)]'
                           : 'bg-slate-950 border-red-500/60 shadow-[0_0_12px_rgba(239,68,68,0.25)]'

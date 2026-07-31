@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
 
+// Flip to true once the Broadlink IR blaster is wired up.
+const AC_HARDWARE_READY = false;
+
 export default function SystemLog({ telemetry }) {
   const [logs, setLogs] = useState([]);
   
@@ -31,11 +34,11 @@ export default function SystemLog({ telemetry }) {
       if (currentCount === 0) {
         msg = 'Room is empty — Vacancy timer initiated';
       } else if (currentCount === 1) {
-        msg = '1 occupant detected in office';
+        msg = '1 occupant detected — Upper & Far bulb lines active';
       } else if (currentCount <= 3) {
-        msg = `${currentCount} occupants detected — LED Panels active`;
+        msg = `${currentCount} occupants detected — Upper & Far bulb lines active`;
       } else {
-        msg = `${currentCount} occupants detected — Full lighting & AC active`;
+        msg = `${currentCount} occupants detected — All 4 bulb lines active`;
       }
 
       newEntries.push({
@@ -49,7 +52,9 @@ export default function SystemLog({ telemetry }) {
     }
 
     // 2. Live AC State log (Human Readable)
-    if (telemetry.ac_state) {
+    // Suppressed until the Broadlink IR blaster is installed -- the backend still
+    // simulates AC state, and logging it would imply hardware that isn't there.
+    if (AC_HARDWARE_READY && telemetry.ac_state) {
       const acKey = `${telemetry.ac_state.power}-${telemetry.ac_state.temperature}-${telemetry.ac_state.mode}-${telemetry.ac_state.fan_speed}`;
       if (prevAcRef.current && prevAcRef.current !== acKey) {
         const power = telemetry.ac_state.power;
@@ -79,22 +84,20 @@ export default function SystemLog({ telemetry }) {
     if (telemetry.relays) {
       const relaysKey = JSON.stringify(telemetry.relays);
       if (prevRelaysRef.current && prevRelaysRef.current !== relaysKey) {
+        // AZIOT Relay A node -> switch -> bulb line. Relay B is not installed yet.
         const rA = telemetry.relays.Relay_A || {};
-        const rB = telemetry.relays.Relay_B || {};
 
         const activeLights = [];
-        if (rA[1]) activeLights.push('Upper Panels (LP1, LP2)');
-        if (rA[2]) activeLights.push('Lower Panels (LP3, LP4)');
-        if (rA[3]) activeLights.push('TV Area Bulbs (LB1-LB3)');
-        if (rA[4]) activeLights.push('Upper Bulbs (LB4-LB6)');
-        if (rB[1]) activeLights.push('Lower Bulbs (LB7-LB9)');
-        if (rB[2]) activeLights.push('Far Bulbs (LB10-LB12)');
+        if (rA[1]) activeLights.push('TV Area Bulbs (LB1-LB3)');
+        if (rA[2]) activeLights.push('Upper Bulbs (LB4-LB6)');
+        if (rA[3]) activeLights.push('Lower Bulbs (LB7-LB9)');
+        if (rA[4]) activeLights.push('Far Bulbs (LB10-LB12)');
 
         let msg = '';
         if (activeLights.length === 0) {
           msg = 'All lights turned OFF';
-        } else if (activeLights.length === 6) {
-          msg = 'All lights turned ON';
+        } else if (activeLights.length === 4) {
+          msg = 'All 4 bulb lines turned ON';
         } else {
           msg = `Active: ${activeLights.join(', ')}`;
         }

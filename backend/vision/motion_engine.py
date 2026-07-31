@@ -27,10 +27,19 @@ class FastMotionEngine:
             }
         """
         h, w = frame.shape[:2]
+
+        # min_contour_area was tuned against 1280x720. Scale it with the frame so a
+        # higher-resolution camera doesn't flood the overlay with noise boxes.
+        area_threshold = self.min_contour_area * ((w * h) / (1280.0 * 720.0))
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
-        if self.prev_gray is None:
+        # Frame size can change mid-stream: live CCTV serves native 1920x1080 while
+        # the synthetic fallback is 1280x720, so any camera dropout swaps resolution
+        # between consecutive frames. absdiff on mismatched shapes raises
+        # "Sizes of input arguments do not match" -- reseed the baseline instead.
+        if self.prev_gray is None or self.prev_gray.shape != gray.shape:
             self.prev_gray = gray
             return {"active_zones": [], "zone_motion_levels": {}, "contours": []}
 
@@ -48,7 +57,7 @@ class FastMotionEngine:
 
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area < self.min_contour_area:
+            if area < area_threshold:
                 continue
 
             x, y, box_w, box_h = cv2.boundingRect(contour)

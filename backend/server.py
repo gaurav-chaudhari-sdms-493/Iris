@@ -33,6 +33,9 @@ os.environ["OMP_NUM_THREADS"] = str(half_cores)
 os.environ["MKL_NUM_THREADS"] = str(half_cores)
 os.environ["OPENBLAS_NUM_THREADS"] = str(half_cores)
 
+# Width the MJPEG preview is scaled to before encoding (display only).
+STREAM_DISPLAY_WIDTH = int(os.environ.get("IRIS_STREAM_WIDTH", 1280))
+
 logger = logging.getLogger("iris.server")
 logging.basicConfig(level=logging.INFO)
 logger.info(f"[CPU Power Management] Process allocated {half_cores} threads out of {total_cores} system cores (50% CPU limit).")
@@ -97,6 +100,17 @@ async def background_telemetry_loop():
                 orchestrator.zone_states,
                 orchestrator.headcount
             )
+
+            # A live camera returns None when it has not delivered a frame yet or
+            # has gone unreachable. Hold the last known state rather than inventing
+            # one: no frame must never read as an empty room, or the vacancy timer
+            # switches the lights off on people who are still sitting there.
+            if frame is None:
+                await asyncio.sleep(0.2)
+                continue
+
+            # Publish for /video_feed to serve (single reader of the source)
+            orchestrator.latest_frame = frame
 
             # Process motion and occupancy step in worker thread
             telemetry = await asyncio.to_thread(
@@ -234,11 +248,15 @@ async def video_feed():
     """MJPEG stream endpoint for real-time video preview in React frontend."""
     async def generate():
         while True:
-            frame = await asyncio.to_thread(
-                orchestrator.stream_gen.read_frame,
-                orchestrator.zone_states,
-                orchestrator.headcount
-            )
+            # Serve the frame the vision engines actually ran on. Pulling a second,
+            # independent frame here would double-poll the camera and leave the
+            # overlay boxes describing a different image than the one displayed.
+            source_frame = orchestrator.latest_frame
+            if source_frame is None:
+                await asyncio.sleep(0.05)
+                continue
+            frame = source_frame.copy()
+
             # Draw motion bounding boxes on stream overlay
             for x, y, bw, bh in orchestrator.latest_motion_boxes:
                 cv2.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 255), 2)
@@ -251,13 +269,21 @@ async def video_feed():
                 cv2.putText(frame, f"PERSON {p.get('confidence', '')}", (bx, by - 5),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
 
+            # Inference runs at native camera resolution; scale down for transport
+            # only. Boxes were drawn beforehand so they scale with the image.
+            if frame.shape[1] > STREAM_DISPLAY_WIDTH:
+                scale = STREAM_DISPLAY_WIDTH / frame.shape[1]
+                frame = cv2.resize(frame, (STREAM_DISPLAY_WIDTH, int(frame.shape[0] * scale)))
+
             ret, jpeg = await asyncio.to_thread(cv2.imencode, '.jpg', frame)
             if not ret:
                 await asyncio.sleep(0.05)
                 continue
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-            await asyncio.sleep(0.05)
+            # Source loop runs at 5 FPS; encoding faster than that only burns CPU
+            # that CPU-bound YOLO inference needs.
+            await asyncio.sleep(0.2)
 
     return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
 
